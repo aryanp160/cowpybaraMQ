@@ -5,13 +5,13 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-brightgreen)
 
-> **Current Status:** V1 in active development.
+> **Current Status:** V2 in active development.
 
 A lightweight log-based message broker built in Python.
 
 CowpybaraMQ is an educational project that explores the fundamentals of distributed messaging systems by implementing publish/subscribe messaging, TCP networking, and append-only log storage from scratch.
 
-## Present Features (V1 In Progress)
+## Present Features (V2 In Progress)
 
 - **Append-Only Log Storage**: Fully implemented in `internal/storage.py`. Messages are persisted sequentially to JSONL files on disk. Topics are automatically created, and integer offsets are safely assigned and preserved across restarts.
 - **Asynchronous Networking Layer**: Implemented in `internal/networking.py`. A non-blocking `asyncio` TCP server that efficiently manages concurrent producer and consumer connections.
