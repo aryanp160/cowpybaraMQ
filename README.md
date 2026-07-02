@@ -1,4 +1,10 @@
 # CowpybaraMQ
+
+![CI](https://github.com/aryanp160/CowpybaraMQ/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-stable-brightgreen)
+
 > **Current Status:** V1 in active development.
 
 A lightweight log-based message broker built in Python.
