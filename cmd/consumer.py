@@ -29,7 +29,9 @@ async def consume(topic, offset, host="127.0.0.1", port=9092):
             
             try:
                 msg = json.loads(line.decode('utf-8').strip())
-                print(f"[{msg.get('offset', '?')}] {msg.get('payload')}")
+                # Historical messages use 'message', live stream uses 'payload'
+                payload_data = msg.get('payload') or msg.get('message')
+                print(f"[{msg.get('offset', '?')}] {payload_data}")
             except json.JSONDecodeError:
                 print(f"Raw response: {line.decode('utf-8').strip()}")
                 

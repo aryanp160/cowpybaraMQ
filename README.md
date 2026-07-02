@@ -59,19 +59,19 @@ cowpybaraMQ/
 3. **Start the broker:**
    Open a terminal and run the broker:
    ```bash
-   python -m cmd.broker
+   python cmd/broker.py
    ```
 
 4. **Consume messages:**
    Open a second terminal and subscribe to a topic:
    ```bash
-   python -m cmd.consumer --topic alerts --offset 0
+   python cmd/consumer.py --topic alerts --offset 0
    ```
 
 5. **Produce messages:**
    Open a third terminal and publish a message:
    ```bash
-   python -m cmd.producer --topic alerts --message "System starting"
+   python cmd/producer.py --topic alerts --message "System starting"
    ```
 
 ## Protocol

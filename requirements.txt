@@ -1,1 +1,4 @@
 # Dependencies will be added here as implementation progresses
+pytest
+pytest-asyncio
+pytest-cov
