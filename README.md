@@ -57,14 +57,21 @@ cowpybaraMQ/
    ```
 
 3. **Start the broker:**
-   You can run the broker using Docker:
+   Open a terminal and run the broker:
    ```bash
-   docker-compose up --build
+   python -m cmd.broker
    ```
-   Or run it locally natively:
+
+4. **Consume messages:**
+   Open a second terminal and subscribe to a topic:
    ```bash
-   export COWPYBARA_LOG_DIR=./logs
-   # python -m cmd.server.main
+   python -m cmd.consumer --topic alerts --offset 0
+   ```
+
+5. **Produce messages:**
+   Open a third terminal and publish a message:
+   ```bash
+   python -m cmd.producer --topic alerts --message "System starting"
    ```
 
 ## Protocol
