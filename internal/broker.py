@@ -6,6 +6,7 @@ from internal.protocol import format_response
 
 logger = logging.getLogger(__name__)
 
+
 class Broker:
     def __init__(self, storage: Storage):
         self.storage = storage
@@ -16,24 +17,20 @@ class Broker:
         """Store the message to disk and broadcast to all active consumers."""
         # 1. Store message
         offset = self.storage.append(topic, payload)
-        
-        message_data = {
-            "topic": topic,
-            "payload": payload,
-            "offset": offset
-        }
-        
+
+        message_data = {"topic": topic, "payload": payload, "offset": offset}
+
         # 2. Broadcast new messages to active consumers
         if topic in self.consumers:
             for queue in self.consumers[topic]:
                 await queue.put(message_data)
-                
+
         return offset
 
     async def subscribe(self, topic: str, offset: int, writer: asyncio.StreamWriter):
         """Read historical messages, send them, and keep connection alive to stream new messages."""
         logger.info(f"Consumer subscribed to '{topic}' starting at offset {offset}")
-        
+
         # 1. Read all historical messages and send them
         historical_messages = self.storage.read_all(topic)
         for msg in historical_messages:

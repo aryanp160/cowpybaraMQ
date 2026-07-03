@@ -1,9 +1,15 @@
 import asyncio
 import logging
-from internal.protocol import parse_request, format_response, ProduceRequest, ConsumeRequest
+from internal.protocol import (
+    parse_request,
+    format_response,
+    ProduceRequest,
+    ConsumeRequest,
+)
 from internal.broker import Broker
 
 logger = logging.getLogger(__name__)
+
 
 class Server:
     def __init__(self, host: str, port: int, broker: Broker):
@@ -12,8 +18,10 @@ class Server:
         self.server = None
         self.broker = broker
 
-    async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        addr = writer.get_extra_info('peername')
+    async def handle_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        addr = writer.get_extra_info("peername")
         logger.info(f"Accepted connection from {addr}")
 
         try:
@@ -25,35 +33,43 @@ class Server:
                 decoded_line = line.decode("utf-8").strip()
                 if not decoded_line:
                     continue
-                
+
                 try:
                     request = parse_request(decoded_line)
-                    
+
                     if isinstance(request, ProduceRequest):
-                        logger.info(f"PRODUCE request: topic={request.topic}, payload={request.payload}")
-                        offset = await self.broker.publish(request.topic, request.payload)
+                        logger.info(
+                            f"PRODUCE request: topic={request.topic}, payload={request.payload}"
+                        )
+                        offset = await self.broker.publish(
+                            request.topic, request.payload
+                        )
                         writer.write(format_response("ok", offset=offset))
                         await writer.drain()
-                    
+
                     elif isinstance(request, ConsumeRequest):
-                        logger.info(f"CONSUME request: topic={request.topic}, offset={request.offset}")
+                        logger.info(
+                            f"CONSUME request: topic={request.topic}, offset={request.offset}"
+                        )
                         # Delegate to broker to send historical messages and stream live ones.
                         # Run the subscription in a background task so we can detect disconnects.
-                        sub_task = asyncio.create_task(self.broker.subscribe(request.topic, request.offset, writer))
-                        
+                        sub_task = asyncio.create_task(
+                            self.broker.subscribe(request.topic, request.offset, writer)
+                        )
+
                         # Wait for the client to disconnect (EOF)
                         while True:
                             eof_line = await reader.readline()
                             if not eof_line:
                                 break
-                                
+
                         # Cancel subscription when client disconnects
                         sub_task.cancel()
                         try:
                             await sub_task
                         except asyncio.CancelledError:
                             pass
-                        
+
                         break  # Exit the main handler loop
 
                 except ValueError as e:
@@ -74,7 +90,7 @@ class Server:
         self.server = await asyncio.start_server(
             self.handle_client, self.host, self.port
         )
-        addrs = ', '.join(str(sock.getsockname()) for sock in self.server.sockets)
+        addrs = ", ".join(str(sock.getsockname()) for sock in self.server.sockets)
         logger.info(f"Serving on {addrs}")
 
         async with self.server:

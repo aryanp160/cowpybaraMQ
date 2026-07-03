@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 from internal.topic import Topic
 
+
 @dataclass
 class Storage:
     log_dir: Path
@@ -12,7 +13,7 @@ class Storage:
     def __post_init__(self):
         """Initialize the storage layer by ensuring the log directory exists and loading existing topics."""
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Discover and load existing topics from disk
         for file_path in self.log_dir.glob("*.jsonl"):
             topic_name = file_path.stem

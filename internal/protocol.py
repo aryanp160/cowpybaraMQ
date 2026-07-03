@@ -2,15 +2,18 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict
 
+
 @dataclass
 class ProduceRequest:
     topic: str
     payload: Dict[str, Any]
 
+
 @dataclass
 class ConsumeRequest:
     topic: str
     offset: int
+
 
 def parse_request(line: str) -> Any:
     """Parse a newline-delimited JSON string into a request object."""
@@ -29,16 +32,17 @@ def parse_request(line: str) -> Any:
         if not topic or payload is None:
             raise ValueError("Missing 'topic' or 'payload' for produce action")
         return ProduceRequest(topic=topic, payload=payload)
-    
+
     elif action == "consume":
         topic = data.get("topic")
         offset = data.get("offset")
         if not topic or offset is None:
             raise ValueError("Missing 'topic' or 'offset' for consume action")
         return ConsumeRequest(topic=topic, offset=offset)
-    
+
     else:
         raise ValueError(f"Unknown action: {action}")
+
 
 def format_response(status: str, **kwargs) -> bytes:
     """Format a response into newline-delimited JSON bytes."""
