@@ -56,7 +56,12 @@ class Server:
                         # Delegate to broker to send historical messages.
                         # Run in background task to detect disconnects.
                         sub_task = asyncio.create_task(
-                            self.broker.subscribe(request.topic, request.offset, writer)
+                            self.broker.subscribe(
+                                request.topic,
+                                request.offset,
+                                writer,
+                                getattr(request, "consumer_id", None),
+                            )
                         )
 
                         # Wait for the client to disconnect (EOF)

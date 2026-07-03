@@ -3,13 +3,15 @@ import logging
 from typing import Dict, Any, List
 from internal.storage import Storage
 from internal.protocol import format_response
+from internal.offsets import OffsetManager
 
 logger = logging.getLogger(__name__)
 
 
 class Broker:
-    def __init__(self, storage: Storage):
+    def __init__(self, storage: Storage, offset_manager: OffsetManager = None):
         self.storage = storage
+        self.offset_manager = offset_manager or OffsetManager()
         # Map of topic -> list of active consumer queues
         self.consumers: Dict[str, List[asyncio.Queue]] = {}
 
@@ -27,9 +29,22 @@ class Broker:
 
         return offset
 
-    async def subscribe(self, topic: str, offset: int, writer: asyncio.StreamWriter):
+    async def subscribe(
+        self,
+        topic: str,
+        offset: int,
+        writer: asyncio.StreamWriter,
+        consumer_id: str = None,
+    ):
         """Read historical messages and keep connection alive to stream new messages."""
-        logger.info(f"Consumer subscribed to '{topic}' starting at offset {offset}")
+        if consumer_id:
+            # Stored offset overrides client-supplied offset if present
+            offset = self.offset_manager.get_offset(consumer_id, topic)
+
+        logger.info(
+            f"Consumer {consumer_id or ''} subscribed to '{topic}' "
+            f"starting at offset {offset}"
+        )
 
         # 1. Read all historical messages and send them
         historical_messages = self.storage.read_all(topic)
@@ -39,6 +54,10 @@ class Broker:
                 response = format_response("ok", **msg)
                 writer.write(response)
                 await writer.drain()
+                if consumer_id:
+                    self.offset_manager.update_offset(
+                        consumer_id, topic, msg_offset + 1
+                    )
 
         # 2. Track consumer queue
         queue = asyncio.Queue()
@@ -53,6 +72,12 @@ class Broker:
                 response = format_response("ok", **msg_data)
                 writer.write(response)
                 await writer.drain()
+                if consumer_id:
+                    msg_offset = msg_data.get("offset")
+                    if msg_offset is not None:
+                        self.offset_manager.update_offset(
+                            consumer_id, topic, msg_offset + 1
+                        )
         except asyncio.CancelledError:
             pass
         except ConnectionError:

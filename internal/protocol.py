@@ -12,7 +12,8 @@ class ProduceRequest:
 @dataclass
 class ConsumeRequest:
     topic: str
-    offset: int
+    offset: int = None
+    consumer_id: str = None
 
 
 def parse_request(line: str) -> Any:
@@ -36,9 +37,12 @@ def parse_request(line: str) -> Any:
     elif action == "consume":
         topic = data.get("topic")
         offset = data.get("offset")
-        if not topic or offset is None:
-            raise ValueError("Missing 'topic' or 'offset' for consume action")
-        return ConsumeRequest(topic=topic, offset=offset)
+        consumer_id = data.get("consumer_id")
+        if not topic:
+            raise ValueError("Missing 'topic' for consume action")
+        if offset is None and not consumer_id:
+            raise ValueError("Missing 'offset' or 'consumer_id' for consume action")
+        return ConsumeRequest(topic=topic, offset=offset, consumer_id=consumer_id)
 
     else:
         raise ValueError(f"Unknown action: {action}")

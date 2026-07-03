@@ -7,6 +7,7 @@ import pytest_asyncio
 from internal.storage import Storage
 from internal.broker import Broker
 from internal.networking import Server
+from internal.offsets import OffsetManager
 
 # Suppress noisy logging during tests unless specifically requested
 logging.getLogger("internal").setLevel(logging.WARNING)
@@ -44,7 +45,8 @@ async def temp_broker_server(tmp_log_dir):
     host = "127.0.0.1"
 
     storage = Storage(log_dir=tmp_log_dir)
-    broker = Broker(storage=storage)
+    offset_manager = OffsetManager(filepath=tmp_log_dir / "offsets.json")
+    broker = Broker(storage=storage, offset_manager=offset_manager)
     server = Server(host, port, broker)
 
     server_task = asyncio.create_task(server.start())
