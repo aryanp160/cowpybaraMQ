@@ -1,6 +1,10 @@
-__pycache__/
-*.pyc
-logs/
-.venv/
 venv/
 .env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+logs/
+offsets/
+.vscode/
+.idea/
