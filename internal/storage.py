@@ -11,7 +11,7 @@ class Storage:
     topics: Dict[str, Topic] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        """Initialize the storage layer by ensuring the log directory exists and loading existing topics."""
+        """Initialize storage by ensuring log dir exists and loading topics."""
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Discover and load existing topics from disk

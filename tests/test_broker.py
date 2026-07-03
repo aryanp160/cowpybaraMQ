@@ -6,7 +6,7 @@ import json
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_broker_startup_shutdown(temp_broker_server):
-    """Test that the broker can start up and accept connections, then gracefully shut down."""
+    """Test broker starts up, accepts connections, and shuts down."""
     host, port, storage, broker, server = temp_broker_server
     reader, writer = await asyncio.open_connection(host, port)
     writer.close()

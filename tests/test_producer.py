@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import importlib.util
 import sys
 from pathlib import Path

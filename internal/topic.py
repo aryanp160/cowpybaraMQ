@@ -12,7 +12,7 @@ class Topic:
     next_offset: int = field(init=False, default=0)
 
     def __post_init__(self):
-        """Initialize the topic by setting up the file path and finding the next offset."""
+        """Initialize topic by setting up file path and finding next offset."""
         self.file_path = self.log_dir / f"{self.name}.jsonl"
 
         # Create the file if it doesn't exist to never overwrite existing logs

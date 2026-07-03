@@ -3,8 +3,6 @@ import logging
 import socket
 import pytest
 import pytest_asyncio
-from pathlib import Path
-import shutil
 
 from internal.storage import Storage
 from internal.broker import Broker

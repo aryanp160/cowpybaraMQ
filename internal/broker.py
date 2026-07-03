@@ -28,7 +28,7 @@ class Broker:
         return offset
 
     async def subscribe(self, topic: str, offset: int, writer: asyncio.StreamWriter):
-        """Read historical messages, send them, and keep connection alive to stream new messages."""
+        """Read historical messages and keep connection alive to stream new messages."""
         logger.info(f"Consumer subscribed to '{topic}' starting at offset {offset}")
 
         # 1. Read all historical messages and send them

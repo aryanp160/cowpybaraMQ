@@ -39,7 +39,8 @@ class Server:
 
                     if isinstance(request, ProduceRequest):
                         logger.info(
-                            f"PRODUCE request: topic={request.topic}, payload={request.payload}"
+                            f"PRODUCE request: topic={request.topic}, "
+                            f"payload={request.payload}"
                         )
                         offset = await self.broker.publish(
                             request.topic, request.payload
@@ -49,10 +50,11 @@ class Server:
 
                     elif isinstance(request, ConsumeRequest):
                         logger.info(
-                            f"CONSUME request: topic={request.topic}, offset={request.offset}"
+                            f"CONSUME request: topic={request.topic}, "
+                            f"offset={request.offset}"
                         )
-                        # Delegate to broker to send historical messages and stream live ones.
-                        # Run the subscription in a background task so we can detect disconnects.
+                        # Delegate to broker to send historical messages.
+                        # Run in background task to detect disconnects.
                         sub_task = asyncio.create_task(
                             self.broker.subscribe(request.topic, request.offset, writer)
                         )
