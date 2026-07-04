@@ -13,7 +13,7 @@ CowpybaraMQ is an educational project that explores the fundamentals of distribu
 
 ## Present Features (V2 In Progress)
 
-- **Append-Only Log Storage**: Fully implemented in `internal/storage.py`. Messages are persisted sequentially to JSONL files on disk. Topics are automatically created, and integer offsets are safely assigned and preserved across restarts.
+- **Append-Only Log Storage**: Fully implemented in `internal/storage.py` and `internal/partition.py`. Messages are routed to partition logs (`orders-0.jsonl`, `orders-1.jsonl`, `orders-2.jsonl`) by hashing the message key (or defaulted to partition 0 if no key is provided). Sequential offsets are preserved independently inside each partition.
 - **Asynchronous Networking Layer**: Implemented in `internal/networking.py`. A non-blocking `asyncio` TCP server that efficiently manages concurrent producer and consumer connections.
 - **Newline-Delimited JSON Protocol**: Implemented in `internal/protocol.py`. A simple, easy-to-parse communication protocol that decodes `produce` and `consume` commands and safely handles invalid data.
 
@@ -29,10 +29,14 @@ CowpybaraMQ is an educational project that explores the fundamentals of distribu
 +----------------+       +---------+---------+       +----------------+
                                    |
                                    v
-                         +-------------------+
-                         |   Storage Layer   |
-                         |  (Append-Only Log)|
-                         +-------------------+
+                         +-----------------------------+
+                         |        Storage Layer        |
+                         |  +-----------------------+  |
+                         |  | partition-0 (orders-0)|  |
+                         |  | partition-1 (orders-1)|  |
+                         |  | partition-2 (orders-2)|  |
+                         |  +-----------------------+  |
+                         +-----------------------------+
 ```
 
 ## Project Structure

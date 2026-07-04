@@ -7,6 +7,7 @@ from typing import Any, Dict
 class ProduceRequest:
     topic: str
     payload: Dict[str, Any]
+    key: str = None
 
 
 @dataclass
@@ -31,9 +32,10 @@ def parse_request(line: str) -> Any:
     if action == "produce":
         topic = data.get("topic")
         payload = data.get("payload")
+        key = data.get("key")
         if not topic or payload is None:
             raise ValueError("Missing 'topic' or 'payload' for produce action")
-        return ProduceRequest(topic=topic, payload=payload)
+        return ProduceRequest(topic=topic, payload=payload, key=key)
 
     elif action == "consume":
         topic = data.get("topic")

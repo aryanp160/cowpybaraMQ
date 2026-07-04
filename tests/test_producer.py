@@ -27,7 +27,10 @@ async def test_producer_valid_message(temp_broker_server, capsys):
     await produce("test_topic", "hello unit test", host=host, port=port)
 
     captured = capsys.readouterr()
-    assert 'Server response: {"status": "ok", "offset": 0}' in captured.out
+    assert (
+        'Server response: {"status": "ok", "partition": 0, "offset": 0}'
+        in captured.out
+    )
 
 
 @pytest.mark.unit

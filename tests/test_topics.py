@@ -7,8 +7,8 @@ def test_multiple_topics(storage):
     storage.append("topic_a", {"msg": "A1"})
     storage.append("topic_b", {"msg": "B1"})
 
-    offset_a = storage.append("topic_a", {"msg": "A2"})
-    offset_b = storage.append("topic_b", {"msg": "B2"})
+    _, offset_a = storage.append("topic_a", {"msg": "A2"})
+    _, offset_b = storage.append("topic_b", {"msg": "B2"})
 
     assert offset_a == 1
     assert offset_b == 1

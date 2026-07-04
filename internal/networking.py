@@ -38,14 +38,19 @@ class Server:
                     request = parse_request(decoded_line)
 
                     if isinstance(request, ProduceRequest):
+                        key = getattr(request, "key", None)
                         logger.info(
                             f"PRODUCE request: topic={request.topic}, "
-                            f"payload={request.payload}"
+                            f"payload={request.payload}, key={key}"
                         )
-                        offset = await self.broker.publish(
-                            request.topic, request.payload
+                        partition_id, offset = await self.broker.publish(
+                            request.topic,
+                            request.payload,
+                            key,
                         )
-                        writer.write(format_response("ok", offset=offset))
+                        writer.write(
+                            format_response("ok", partition=partition_id, offset=offset)
+                        )
                         await writer.drain()
 
                     elif isinstance(request, ConsumeRequest):

@@ -1,36 +1,71 @@
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
-
-from internal.topic import Topic
+from typing import Any, Dict, List, Tuple
+from internal.config import NUM_PARTITIONS
+from internal.partition import Partition
 
 
 @dataclass
 class Storage:
     log_dir: Path
-    topics: Dict[str, Topic] = field(init=False, default_factory=dict)
+    num_partitions: int = NUM_PARTITIONS
+    # topic_name -> partition_id -> Partition
+    partitions: Dict[str, Dict[int, Partition]] = field(
+        init=False, default_factory=dict
+    )
+    # Round-robin counter per topic for messages published without key
+    _rr_counters: Dict[str, int] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        """Initialize storage by ensuring log dir exists and loading topics."""
+        """Initialize storage by ensuring log dir exists and loading partition logs."""
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Discover and load existing topics from disk
-        for file_path in self.log_dir.glob("*.jsonl"):
-            topic_name = file_path.stem
-            self.topics[topic_name] = Topic(name=topic_name, log_dir=self.log_dir)
+        # Discover and load existing partition files from disk
+        for file_path in self.log_dir.glob("*-*.jsonl"):
+            stem = file_path.stem
+            parts = stem.rsplit("-", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                topic_name = parts[0]
+                partition_id = int(parts[1])
 
-    def get_topic(self, topic_name: str) -> Topic:
-        """Get an existing topic or create it automatically if it doesn't exist."""
-        if topic_name not in self.topics:
-            self.topics[topic_name] = Topic(name=topic_name, log_dir=self.log_dir)
-        return self.topics[topic_name]
+                if topic_name not in self.partitions:
+                    self.partitions[topic_name] = {}
+                self.partitions[topic_name][partition_id] = Partition(
+                    topic_name=topic_name,
+                    partition_id=partition_id,
+                    log_dir=self.log_dir,
+                )
 
-    def append(self, topic_name: str, message: Dict[str, Any]) -> int:
-        """Append a message to the specified topic."""
-        topic = self.get_topic(topic_name)
-        return topic.append(message)
+    def get_partition(self, topic_name: str, partition_id: int) -> Partition:
+        """Get an existing partition or create it automatically if it doesn't exist."""
+        if topic_name not in self.partitions:
+            self.partitions[topic_name] = {}
+        if partition_id not in self.partitions[topic_name]:
+            self.partitions[topic_name][partition_id] = Partition(
+                topic_name=topic_name,
+                partition_id=partition_id,
+                log_dir=self.log_dir,
+            )
+        return self.partitions[topic_name][partition_id]
 
-    def read_all(self, topic_name: str) -> List[Dict[str, Any]]:
-        """Read all messages from the specified topic."""
-        topic = self.get_topic(topic_name)
-        return topic.read_all()
+    def append(
+        self, topic_name: str, message: Dict[str, Any], key: str = None
+    ) -> Tuple[int, int]:
+        """Route to partition and append, returning (partition_id, offset)."""
+        if key is not None:
+            # Hash message key to select partition
+            partition_id = zlib.crc32(key.encode("utf-8")) % self.num_partitions
+        else:
+            # Default to partition 0 if key is absent to preserve backward compatibility
+            # until partition assignment / multi-partition consumption is implemented.
+            partition_id = 0
+
+        partition = self.get_partition(topic_name, partition_id)
+        offset = partition.append(message)
+        return partition_id, offset
+
+    def read_all(self, topic_name: str, partition_id: int = 0) -> List[Dict[str, Any]]:
+        """Read all messages from the specified partition of a topic."""
+        partition = self.get_partition(topic_name, partition_id)
+        return partition.read_all()

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from internal.storage import Storage
 from internal.protocol import format_response
 from internal.offsets import OffsetManager
@@ -26,12 +26,19 @@ class Broker:
         # group_id -> topic -> consumer_id -> asyncio.Queue
         self.group_queues: Dict[str, Dict[str, Dict[str, asyncio.Queue]]] = {}
 
-    async def publish(self, topic: str, payload: Dict[str, Any]) -> int:
+    async def publish(
+        self, topic: str, payload: Dict[str, Any], key: str = None
+    ) -> Tuple[int, int]:
         """Store the message to disk and broadcast to all active consumers."""
         # 1. Store message
-        offset = self.storage.append(topic, payload)
+        partition_id, offset = self.storage.append(topic, payload, key)
 
-        message_data = {"topic": topic, "payload": payload, "offset": offset}
+        message_data = {
+            "topic": topic,
+            "payload": payload,
+            "offset": offset,
+            "partition": partition_id,
+        }
 
         # 2. Broadcast new messages to active standalone consumers
         if topic in self.consumers:
@@ -41,7 +48,7 @@ class Broker:
         # 3. Broadcast to assigned group consumers
         for g_id in list(self.group_events.keys()):
             if topic in self.group_events[g_id]:
-                tp = TopicPartition(topic, 0)
+                tp = TopicPartition(topic, partition_id)
                 assigned_consumer = None
                 with self.group_manager.lock:
                     assignments = self.group_manager.assignments.get(g_id, {}).get(
@@ -61,7 +68,7 @@ class Broker:
                     if q:
                         await q.put(message_data)
 
-        return offset
+        return partition_id, offset
 
     async def subscribe(
         self,
@@ -70,6 +77,7 @@ class Broker:
         writer: asyncio.StreamWriter,
         consumer_id: str = None,
         group_id: str = None,
+        partition: int = 0,
     ):
         """Read historical messages and keep connection alive to stream new messages."""
         if group_id:
@@ -85,7 +93,7 @@ class Broker:
             try:
                 assigned = False
                 queue = asyncio.Queue()
-                tp = TopicPartition(topic, 0)
+                tp = TopicPartition(topic, partition)
 
                 while True:
                     assignments = self.group_manager.register_consumer(
@@ -96,7 +104,7 @@ class Broker:
                     if is_assigned and not assigned:
                         assigned = True
                         group_offset = self.group_manager.get_offset(group_id, tp)
-                        historical_messages = self.storage.read_all(topic)
+                        historical_messages = self.storage.read_all(topic, tp.partition)
                         for msg in historical_messages:
                             msg_offset = msg.get("offset")
                             if msg_offset is not None and msg_offset >= group_offset:
