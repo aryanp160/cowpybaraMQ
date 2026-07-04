@@ -4,16 +4,27 @@ from typing import Dict, Any, List
 from internal.storage import Storage
 from internal.protocol import format_response
 from internal.offsets import OffsetManager
+from internal.groups import GroupManager, TopicPartition
 
 logger = logging.getLogger(__name__)
 
 
 class Broker:
-    def __init__(self, storage: Storage, offset_manager: OffsetManager = None):
+    def __init__(
+        self,
+        storage: Storage,
+        offset_manager: OffsetManager = None,
+        group_manager: GroupManager = None,
+    ):
         self.storage = storage
         self.offset_manager = offset_manager or OffsetManager()
-        # Map of topic -> list of active consumer queues
+        self.group_manager = group_manager or GroupManager()
+        # Map of topic -> list of active standalone consumer queues
         self.consumers: Dict[str, List[asyncio.Queue]] = {}
+        # group_id -> topic -> consumer_id -> asyncio.Event
+        self.group_events: Dict[str, Dict[str, Dict[str, asyncio.Event]]] = {}
+        # group_id -> topic -> consumer_id -> asyncio.Queue
+        self.group_queues: Dict[str, Dict[str, Dict[str, asyncio.Queue]]] = {}
 
     async def publish(self, topic: str, payload: Dict[str, Any]) -> int:
         """Store the message to disk and broadcast to all active consumers."""
@@ -22,10 +33,33 @@ class Broker:
 
         message_data = {"topic": topic, "payload": payload, "offset": offset}
 
-        # 2. Broadcast new messages to active consumers
+        # 2. Broadcast new messages to active standalone consumers
         if topic in self.consumers:
             for queue in self.consumers[topic]:
                 await queue.put(message_data)
+
+        # 3. Broadcast to assigned group consumers
+        for g_id in list(self.group_events.keys()):
+            if topic in self.group_events[g_id]:
+                tp = TopicPartition(topic, 0)
+                assigned_consumer = None
+                with self.group_manager.lock:
+                    assignments = self.group_manager.assignments.get(g_id, {}).get(
+                        topic, {}
+                    )
+                    for cid, tps in assignments.items():
+                        if tp in tps:
+                            assigned_consumer = cid
+                            break
+
+                if assigned_consumer:
+                    q = (
+                        self.group_queues.get(g_id, {})
+                        .get(topic, {})
+                        .get(assigned_consumer)
+                    )
+                    if q:
+                        await q.put(message_data)
 
         return offset
 
@@ -35,8 +69,107 @@ class Broker:
         offset: int,
         writer: asyncio.StreamWriter,
         consumer_id: str = None,
+        group_id: str = None,
     ):
         """Read historical messages and keep connection alive to stream new messages."""
+        if group_id:
+            if not consumer_id:
+                import uuid
+
+                consumer_id = f"consumer-{uuid.uuid4().hex[:8]}"
+
+            rebalance_event = asyncio.Event()
+            self._register_group_event(group_id, topic, consumer_id, rebalance_event)
+            self._trigger_group_rebalance(group_id, topic)
+
+            try:
+                assigned = False
+                queue = asyncio.Queue()
+                tp = TopicPartition(topic, 0)
+
+                while True:
+                    assignments = self.group_manager.register_consumer(
+                        group_id, consumer_id, topic
+                    )
+                    is_assigned = tp in assignments
+
+                    if is_assigned and not assigned:
+                        assigned = True
+                        group_offset = self.group_manager.get_offset(group_id, tp)
+                        historical_messages = self.storage.read_all(topic)
+                        for msg in historical_messages:
+                            msg_offset = msg.get("offset")
+                            if msg_offset is not None and msg_offset >= group_offset:
+                                response = format_response("ok", **msg)
+                                writer.write(response)
+                                await writer.drain()
+                                self.group_manager.update_offset(
+                                    group_id, tp, msg_offset + 1
+                                )
+
+                        self._register_group_queue(group_id, topic, consumer_id, queue)
+
+                    elif not is_assigned and assigned:
+                        assigned = False
+                        self._deregister_group_queue(group_id, topic, consumer_id)
+                        while not queue.empty():
+                            queue.get_nowait()
+
+                    if assigned:
+                        get_task = asyncio.create_task(queue.get())
+                        wait_rebalance_task = asyncio.create_task(
+                            rebalance_event.wait()
+                        )
+
+                        done, pending = await asyncio.wait(
+                            [get_task, wait_rebalance_task],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+
+                        for task in pending:
+                            task.cancel()
+                            try:
+                                await task
+                            except asyncio.CancelledError:
+                                pass
+
+                        if wait_rebalance_task in done:
+                            rebalance_event.clear()
+                            continue
+
+                        if get_task in done:
+                            msg_data = get_task.result()
+                            response = format_response("ok", **msg_data)
+                            writer.write(response)
+                            await writer.drain()
+                            msg_offset = msg_data.get("offset")
+                            if msg_offset is not None:
+                                self.group_manager.update_offset(
+                                    group_id, tp, msg_offset + 1
+                                )
+                    else:
+                        await rebalance_event.wait()
+                        rebalance_event.clear()
+
+            except asyncio.CancelledError:
+                pass
+            except ConnectionError:
+                pass
+            except Exception as e:
+                logger.error(
+                    f"Error streaming to group consumer '{consumer_id}' "
+                    f"for topic '{topic}': {e}"
+                )
+            finally:
+                self.group_manager.deregister_consumer(group_id, consumer_id, topic)
+                self._deregister_group_event(group_id, topic, consumer_id)
+                self._deregister_group_queue(group_id, topic, consumer_id)
+                self._trigger_group_rebalance(group_id, topic)
+                logger.info(
+                    f"Group consumer '{consumer_id}' disconnected from '{topic}'"
+                )
+            return
+
         if consumer_id:
             # Stored offset overrides client-supplied offset if present
             offset = self.offset_manager.get_offset(consumer_id, topic)
@@ -92,3 +225,44 @@ class Broker:
                 if not self.consumers[topic]:
                     del self.consumers[topic]
             logger.info(f"Consumer disconnected from '{topic}'")
+
+    def _register_group_event(
+        self, group_id: str, topic: str, consumer_id: str, event: asyncio.Event
+    ):
+        if group_id not in self.group_events:
+            self.group_events[group_id] = {}
+        if topic not in self.group_events[group_id]:
+            self.group_events[group_id][topic] = {}
+        self.group_events[group_id][topic][consumer_id] = event
+
+    def _deregister_group_event(self, group_id: str, topic: str, consumer_id: str):
+        if group_id in self.group_events and topic in self.group_events[group_id]:
+            if consumer_id in self.group_events[group_id][topic]:
+                del self.group_events[group_id][topic][consumer_id]
+            if not self.group_events[group_id][topic]:
+                del self.group_events[group_id][topic]
+            if not self.group_events[group_id]:
+                del self.group_events[group_id]
+
+    def _register_group_queue(
+        self, group_id: str, topic: str, consumer_id: str, queue: asyncio.Queue
+    ):
+        if group_id not in self.group_queues:
+            self.group_queues[group_id] = {}
+        if topic not in self.group_queues[group_id]:
+            self.group_queues[group_id][topic] = {}
+        self.group_queues[group_id][topic][consumer_id] = queue
+
+    def _deregister_group_queue(self, group_id: str, topic: str, consumer_id: str):
+        if group_id in self.group_queues and topic in self.group_queues[group_id]:
+            if consumer_id in self.group_queues[group_id][topic]:
+                del self.group_queues[group_id][topic][consumer_id]
+            if not self.group_queues[group_id][topic]:
+                del self.group_queues[group_id][topic]
+            if not self.group_queues[group_id]:
+                del self.group_queues[group_id]
+
+    def _trigger_group_rebalance(self, group_id: str, topic: str):
+        if group_id in self.group_events and topic in self.group_events[group_id]:
+            for event in self.group_events[group_id][topic].values():
+                event.set()

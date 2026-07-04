@@ -61,6 +61,7 @@ class Server:
                                 request.offset,
                                 writer,
                                 getattr(request, "consumer_id", None),
+                                getattr(request, "group_id", None),
                             )
                         )
 
