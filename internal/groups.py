@@ -1,8 +1,10 @@
 import json
+import logging
 import threading
 from pathlib import Path
 from typing import Dict, List
 from dataclasses import dataclass
+from internal.config import NUM_PARTITIONS
 
 
 @dataclass(frozen=True)
@@ -12,8 +14,13 @@ class TopicPartition:
 
 
 class GroupManager:
-    def __init__(self, filepath: str = "storage/group_offsets.json"):
+    def __init__(
+        self,
+        filepath: str = "storage/group_offsets.json",
+        num_partitions: int = NUM_PARTITIONS,
+    ):
         self.filepath = Path(filepath)
+        self.num_partitions = num_partitions
         self.lock = threading.Lock()
 
         # group_id -> topic -> partition_id -> offset
@@ -117,13 +124,28 @@ class GroupManager:
 
         members = self.members.get(group_id, {}).get(topic, [])
         if not members:
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"[Rebalance] Group '{group_id}' topic '{topic}': No active members."
+            )
             return
 
-        # Prepare for future partitions: Currently 1 virtual partition (0)
-        partitions = [TopicPartition(topic, 0)]
+        # Round-robin distribution of all partitions
+        partitions = [TopicPartition(topic, p) for p in range(self.num_partitions)]
 
         for i, tp in enumerate(partitions):
             assigned_member = members[i % len(members)]
             if assigned_member not in self.assignments[group_id][topic]:
                 self.assignments[group_id][topic][assigned_member] = []
             self.assignments[group_id][topic][assigned_member].append(tp)
+
+        # Logging partition ownership
+        logger = logging.getLogger(__name__)
+        ownership = {
+            m: [tp.partition for tp in self.assignments[group_id][topic].get(m, [])]
+            for m in members
+        }
+        logger.info(
+            f"[Rebalance] Group '{group_id}' topic '{topic}' "
+            f"ownership assignments: {ownership}"
+        )

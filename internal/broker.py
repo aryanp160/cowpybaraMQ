@@ -90,74 +90,63 @@ class Broker:
             self._register_group_event(group_id, topic, consumer_id, rebalance_event)
             self._trigger_group_rebalance(group_id, topic)
 
-            try:
-                assigned = False
-                queue = asyncio.Queue()
-                tp = TopicPartition(topic, partition)
+            active_tasks: Dict[int, asyncio.Task] = {}
+            queue = asyncio.Queue()
+            self._register_group_queue(group_id, topic, consumer_id, queue)
 
+            try:
                 while True:
                     assignments = self.group_manager.register_consumer(
                         group_id, consumer_id, topic
                     )
-                    is_assigned = tp in assignments
+                    assigned_partitions = {tp.partition for tp in assignments}
 
-                    if is_assigned and not assigned:
-                        assigned = True
-                        group_offset = self.group_manager.get_offset(group_id, tp)
-                        historical_messages = self.storage.read_all(topic, tp.partition)
-                        for msg in historical_messages:
-                            msg_offset = msg.get("offset")
-                            if msg_offset is not None and msg_offset >= group_offset:
-                                response = format_response("ok", **msg)
-                                writer.write(response)
-                                await writer.drain()
-                                self.group_manager.update_offset(
-                                    group_id, tp, msg_offset + 1
+                    # Start tasks for newly assigned partitions
+                    for p in assigned_partitions:
+                        if p not in active_tasks:
+                            active_tasks[p] = asyncio.create_task(
+                                self._consume_group_partition(
+                                    group_id, topic, p, consumer_id, writer
                                 )
+                            )
 
-                        self._register_group_queue(group_id, topic, consumer_id, queue)
+                    # Stop tasks for partitions that are no longer assigned
+                    for p in list(active_tasks.keys()):
+                        if p not in assigned_partitions:
+                            active_tasks[p].cancel()
+                            del active_tasks[p]
 
-                    elif not is_assigned and assigned:
-                        assigned = False
-                        self._deregister_group_queue(group_id, topic, consumer_id)
-                        while not queue.empty():
-                            queue.get_nowait()
+                    get_task = asyncio.create_task(queue.get())
+                    wait_rebalance_task = asyncio.create_task(rebalance_event.wait())
 
-                    if assigned:
-                        get_task = asyncio.create_task(queue.get())
-                        wait_rebalance_task = asyncio.create_task(
-                            rebalance_event.wait()
-                        )
+                    done, pending = await asyncio.wait(
+                        [get_task, wait_rebalance_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
 
-                        done, pending = await asyncio.wait(
-                            [get_task, wait_rebalance_task],
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
+                    for task in pending:
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
 
-                        for task in pending:
-                            task.cancel()
-                            try:
-                                await task
-                            except asyncio.CancelledError:
-                                pass
+                    if wait_rebalance_task in done:
+                        rebalance_event.clear()
+                        continue
 
-                        if wait_rebalance_task in done:
-                            rebalance_event.clear()
-                            continue
-
-                        if get_task in done:
-                            msg_data = get_task.result()
+                    if get_task in done:
+                        msg_data = get_task.result()
+                        p = msg_data.get("partition", 0)
+                        if p in assigned_partitions:
                             response = format_response("ok", **msg_data)
                             writer.write(response)
                             await writer.drain()
                             msg_offset = msg_data.get("offset")
                             if msg_offset is not None:
                                 self.group_manager.update_offset(
-                                    group_id, tp, msg_offset + 1
+                                    group_id, TopicPartition(topic, p), msg_offset + 1
                                 )
-                    else:
-                        await rebalance_event.wait()
-                        rebalance_event.clear()
 
             except asyncio.CancelledError:
                 pass
@@ -169,6 +158,8 @@ class Broker:
                     f"for topic '{topic}': {e}"
                 )
             finally:
+                for task in active_tasks.values():
+                    task.cancel()
                 self.group_manager.deregister_consumer(group_id, consumer_id, topic)
                 self._deregister_group_event(group_id, topic, consumer_id)
                 self._deregister_group_queue(group_id, topic, consumer_id)
@@ -274,3 +265,30 @@ class Broker:
         if group_id in self.group_events and topic in self.group_events[group_id]:
             for event in self.group_events[group_id][topic].values():
                 event.set()
+
+    async def _consume_group_partition(
+        self,
+        group_id: str,
+        topic: str,
+        partition_id: int,
+        consumer_id: str,
+        writer: asyncio.StreamWriter,
+    ):
+        try:
+            tp = TopicPartition(topic, partition_id)
+            group_offset = self.group_manager.get_offset(group_id, tp)
+            historical_messages = self.storage.read_all(topic, partition_id)
+            for msg in historical_messages:
+                msg_offset = msg.get("offset")
+                if msg_offset is not None and msg_offset >= group_offset:
+                    response = format_response("ok", **msg)
+                    writer.write(response)
+                    await writer.drain()
+                    self.group_manager.update_offset(group_id, tp, msg_offset + 1)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(
+                f"Error consuming partition {partition_id} "
+                f"for group {group_id}: {e}"
+            )

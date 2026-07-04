@@ -28,8 +28,7 @@ async def test_producer_valid_message(temp_broker_server, capsys):
 
     captured = capsys.readouterr()
     assert (
-        'Server response: {"status": "ok", "partition": 0, "offset": 0}'
-        in captured.out
+        'Server response: {"status": "ok", "partition": 0, "offset": 0}' in captured.out
     )
 
 
