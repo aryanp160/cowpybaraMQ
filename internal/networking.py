@@ -6,6 +6,7 @@ from internal.protocol import (
     ProduceRequest,
     ConsumeRequest,
     StatusRequest,
+    RegisterFollowerRequest,
 )
 from internal.broker import Broker
 
@@ -25,6 +26,8 @@ class Server:
         addr = writer.get_extra_info("peername")
         logger.info(f"Accepted connection from {addr}")
 
+        registered_follower_id = None
+
         try:
             while True:
                 line = await reader.readline()
@@ -43,6 +46,14 @@ class Server:
                         writer.write(format_response("ok", stats=stats))
                         await writer.drain()
 
+                    elif isinstance(request, RegisterFollowerRequest):
+                        registered_follower_id = request.broker_id
+                        asyncio.create_task(
+                            self.broker.replication_manager.register_follower(
+                                request.broker_id, request.offsets, writer
+                            )
+                        )
+
                     elif isinstance(request, ProduceRequest):
                         key = getattr(request, "key", None)
                         logger.info(
@@ -56,12 +67,19 @@ class Server:
                                 request.payload,
                                 key,
                             )
+                            writer.write(
+                                format_response(
+                                    "ok",
+                                    partition=partition_id,
+                                    offset=offset,
+                                )
+                            )
+                            await writer.drain()
+                        except PermissionError as pe:
+                            writer.write(format_response("error", message=str(pe)))
+                            await writer.drain()
                         finally:
                             self.broker.active_producers -= 1
-                        writer.write(
-                            format_response("ok", partition=partition_id, offset=offset)
-                        )
-                        await writer.drain()
 
                     elif isinstance(request, ConsumeRequest):
                         logger.info(
@@ -105,6 +123,11 @@ class Server:
         except Exception as e:
             logger.error(f"Error handling client {addr}: {e}")
         finally:
+            if (
+                registered_follower_id
+                and registered_follower_id in self.broker.replication_manager.followers
+            ):
+                del self.broker.replication_manager.followers[registered_follower_id]
             logger.info(f"Closing connection to {addr}")
             writer.close()
             await writer.wait_closed()

@@ -15,7 +15,13 @@ class Broker:
         storage: Storage,
         offset_manager: OffsetManager = None,
         group_manager: GroupManager = None,
+        role: str = None,
+        leader_host: str = None,
+        leader_port: int = None,
     ):
+        from internal.config import BROKER_ROLE, LEADER_HOST, LEADER_PORT
+        from internal.replication import ReplicationManager
+
         self.storage = storage
         self.offset_manager = offset_manager or OffsetManager()
         self.group_manager = group_manager or GroupManager()
@@ -30,6 +36,14 @@ class Broker:
         self.messages_per_second = 0
         self.active_producers = 0
         self.throughput_task = None
+
+        role = role or BROKER_ROLE
+        leader_host = leader_host or LEADER_HOST
+        leader_port = leader_port or LEADER_PORT
+
+        self.replication_manager = ReplicationManager(self, role=role)
+        if role == "follower":
+            self.replication_manager.start_follower_sync(leader_host, leader_port)
 
     def _ensure_throughput_task(self):
         if self.throughput_task is None:
@@ -97,9 +111,17 @@ class Broker:
         self, topic: str, payload: Dict[str, Any], key: str = None
     ) -> Tuple[int, int]:
         """Store the message to disk and broadcast to all active consumers."""
+        if self.replication_manager.role == "follower":
+            raise PermissionError("Error: Not a leader")
+
         self.msg_counter += 1
         # 1. Store message
         partition_id, offset = self.storage.append(topic, payload, key)
+
+        # Broadcast replication to followers asynchronously
+        await self.replication_manager.broadcast_replication(
+            topic, partition_id, offset, payload
+        )
 
         message_data = {
             "topic": topic,

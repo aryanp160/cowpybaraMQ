@@ -50,19 +50,26 @@ class Storage:
         return self.partitions[topic_name][partition_id]
 
     def append(
-        self, topic_name: str, message: Dict[str, Any], key: str = None
+        self,
+        topic_name: str,
+        message: Dict[str, Any],
+        key: str = None,
+        partition_id: int = None,
+        offset: int = None,
     ) -> Tuple[int, int]:
         """Route to partition and append, returning (partition_id, offset)."""
-        if key is not None:
-            # Hash message key to select partition
-            partition_id = zlib.crc32(key.encode("utf-8")) % self.num_partitions
-        else:
-            # Default to partition 0 if key is absent to preserve backward compatibility
-            # until partition assignment / multi-partition consumption is implemented.
-            partition_id = 0
+        if partition_id is None:
+            if key is not None:
+                # Hash message key to select partition
+                h_val = zlib.crc32(key.encode("utf-8"))
+                partition_id = h_val % self.num_partitions
+            else:
+                # Default to partition 0 if key is absent for backward
+                # compatibility until partition assignment is implemented.
+                partition_id = 0
 
         partition = self.get_partition(topic_name, partition_id)
-        offset = partition.append(message)
+        offset = partition.append(message, offset)
         return partition_id, offset
 
     def read_all(self, topic_name: str, partition_id: int = 0) -> List[Dict[str, Any]]:

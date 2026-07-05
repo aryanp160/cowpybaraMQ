@@ -9,6 +9,11 @@ PORT = int(os.getenv("COWPYBARA_PORT", 9092))
 LOG_DIR = os.getenv("COWPYBARA_LOG_DIR", "./logs")
 NUM_PARTITIONS = int(os.getenv("COWPYBARA_NUM_PARTITIONS", 3))
 
+# Replication configuration
+BROKER_ROLE = os.getenv("COWPYBARA_ROLE", "leader")
+LEADER_HOST = os.getenv("COWPYBARA_LEADER_HOST", "127.0.0.1")
+LEADER_PORT = int(os.getenv("COWPYBARA_LEADER_PORT", 9092))
+
 
 # Logging configuration
 def setup_logging():

@@ -23,6 +23,20 @@ class StatusRequest:
     pass
 
 
+@dataclass
+class RegisterFollowerRequest:
+    broker_id: str
+    offsets: Dict[str, int]
+
+
+@dataclass
+class ReplicateRequest:
+    topic: str
+    partition: int
+    offset: int
+    payload: Dict[str, Any]
+
+
 def parse_request(line: str) -> Any:
     """Parse a newline-delimited JSON string into a request object."""
     try:
@@ -36,6 +50,30 @@ def parse_request(line: str) -> Any:
 
     if action == "status":
         return StatusRequest()
+
+    if action == "register_follower":
+        broker_id = data.get("broker_id")
+        offsets = data.get("offsets", {})
+        if not broker_id:
+            raise ValueError("Missing broker_id for register_follower")
+        return RegisterFollowerRequest(
+            broker_id=broker_id,
+            offsets=offsets,
+        )
+
+    if action == "replicate":
+        topic = data.get("topic")
+        partition = data.get("partition")
+        offset = data.get("offset")
+        payload = data.get("payload")
+        if not topic or partition is None or offset is None or payload is None:
+            raise ValueError("Missing required fields for replicate")
+        return ReplicateRequest(
+            topic=topic,
+            partition=int(partition),
+            offset=int(offset),
+            payload=payload,
+        )
 
     if action == "produce":
         topic = data.get("topic")
