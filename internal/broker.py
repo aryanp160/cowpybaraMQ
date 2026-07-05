@@ -26,10 +26,78 @@ class Broker:
         # group_id -> topic -> consumer_id -> asyncio.Queue
         self.group_queues: Dict[str, Dict[str, Dict[str, asyncio.Queue]]] = {}
 
+        self.msg_counter = 0
+        self.messages_per_second = 0
+        self.active_producers = 0
+        self.throughput_task = None
+
+    def _ensure_throughput_task(self):
+        if self.throughput_task is None:
+            try:
+                self.throughput_task = asyncio.create_task(self._track_throughput())
+            except RuntimeError:
+                pass
+
+    async def _track_throughput(self):
+        while True:
+            await asyncio.sleep(1.0)
+            self.messages_per_second = self.msg_counter
+            self.msg_counter = 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        self._ensure_throughput_task()
+
+        topics = list(self.storage.partitions.keys())
+        partitions_dict = {t: self.storage.num_partitions for t in topics}
+
+        standalone_consumers = []
+        for topic, queues in self.consumers.items():
+            for i in range(len(queues)):
+                standalone_consumers.append(f"consumer-{topic}-{i}")
+
+        group_ids = list(self.group_events.keys())
+        group_consumers = []
+        ownership_map = {}
+        for g_id in group_ids:
+            ownership_map[g_id] = {}
+            for topic in self.group_events[g_id].keys():
+                ownership_map[g_id][topic] = {}
+                members = list(self.group_events[g_id][topic].keys())
+                group_consumers.extend(members)
+                with self.group_manager.lock:
+                    assignments = self.group_manager.assignments.get(g_id, {}).get(
+                        topic, {}
+                    )
+                    for cid, tps in assignments.items():
+                        ownership_map[g_id][topic][cid] = [tp.partition for tp in tps]
+
+        all_consumers = sorted(
+            list(set(standalone_consumers + group_consumers + group_ids))
+        )
+
+        offsets_dict = {}
+        total_messages = 0
+        for topic in topics:
+            for p_id, partition in self.storage.partitions[topic].items():
+                offset = partition.next_offset
+                offsets_dict[f"{topic}-{p_id}"] = offset
+                total_messages += offset
+
+        return {
+            "topics": partitions_dict,
+            "consumers": all_consumers,
+            "offsets": offsets_dict,
+            "total_messages": total_messages,
+            "messages_sec": self.messages_per_second,
+            "connected_producers": self.active_producers,
+            "partition_ownership": ownership_map,
+        }
+
     async def publish(
         self, topic: str, payload: Dict[str, Any], key: str = None
     ) -> Tuple[int, int]:
         """Store the message to disk and broadcast to all active consumers."""
+        self.msg_counter += 1
         # 1. Store message
         partition_id, offset = self.storage.append(topic, payload, key)
 

@@ -5,6 +5,7 @@ from internal.protocol import (
     format_response,
     ProduceRequest,
     ConsumeRequest,
+    StatusRequest,
 )
 from internal.broker import Broker
 
@@ -37,17 +38,26 @@ class Server:
                 try:
                     request = parse_request(decoded_line)
 
-                    if isinstance(request, ProduceRequest):
+                    if isinstance(request, StatusRequest):
+                        stats = self.broker.get_stats()
+                        writer.write(format_response("ok", stats=stats))
+                        await writer.drain()
+
+                    elif isinstance(request, ProduceRequest):
                         key = getattr(request, "key", None)
                         logger.info(
                             f"PRODUCE request: topic={request.topic}, "
                             f"payload={request.payload}, key={key}"
                         )
-                        partition_id, offset = await self.broker.publish(
-                            request.topic,
-                            request.payload,
-                            key,
-                        )
+                        self.broker.active_producers += 1
+                        try:
+                            partition_id, offset = await self.broker.publish(
+                                request.topic,
+                                request.payload,
+                                key,
+                            )
+                        finally:
+                            self.broker.active_producers -= 1
                         writer.write(
                             format_response("ok", partition=partition_id, offset=offset)
                         )

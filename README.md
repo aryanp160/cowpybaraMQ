@@ -5,143 +5,143 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-brightgreen)
 
-> **Current Status:** V2 in active development.
+A distributed log-based message broker inspired by Apache Kafka, built from scratch in Python.
 
-A lightweight log-based message broker built in Python.
+---
 
-CowpybaraMQ is an educational project that explores the fundamentals of distributed messaging systems by implementing publish/subscribe messaging, TCP networking, and append-only log storage from scratch.
+## Features
 
-## Present Features (V2 In Progress)
+- **Producer/Consumer Model**: Non-blocking asynchronous message publishing and subscription over raw TCP sockets.
+- **Consumer Groups**: Scalable consumption with round-robin partition distribution among group members.
+- **Persistent Offsets**: Thread-safe group commit offset storage persisting to disk (`storage/group_offsets.json`).
+- **Topic Partitioning**: Support for hashing message keys to determine target partition segments (`orders-0.jsonl`, etc.) preserving partition-level ordering.
+- **Automatic Rebalancing**: Dynamic workload reallocation notifying active consumers immediately when members join or leave a group.
+- **Monitoring Utilities**: Real-time stats engine and throughput metrics utility (`status`) tracking message rate (msgs/sec) and partition ownership.
+- **Persistent Logs**: Structured JSON Lines (JSONL) append-only logging recovering state smoothly after broker restarts.
 
-- **Append-Only Log Storage**: Fully implemented in `internal/storage.py` and `internal/partition.py`. Messages are routed to partition logs (`orders-0.jsonl`, `orders-1.jsonl`, `orders-2.jsonl`) by hashing the message key (or defaulted to partition 0 if no key is provided). Sequential offsets are preserved independently inside each partition.
-- **Asynchronous Networking Layer**: Implemented in `internal/networking.py`. A non-blocking `asyncio` TCP server that efficiently manages concurrent producer and consumer connections.
-- **Newline-Delimited JSON Protocol**: Implemented in `internal/protocol.py`. A simple, easy-to-parse communication protocol that decodes `produce` and `consume` commands and safely handles invalid data.
+---
 
-> **Next Up:** The central broker logic (wiring the networking layer directly to the storage layer) is currently pending implementation.
+## Architecture
 
-### Architecture Diagram
+CowpybaraMQ follows a multi-producer, multi-consumer model inspired by Apache Kafka. It is structured into the following layers:
 
-```text
-+----------------+       +-------------------+       +----------------+
-|                |       |                   |       |                |
-|  Producer(s)   +------>+   CowpybaraMQ     +------>+  Consumer(s)   |
-|                |       |   (TCP Broker)    |       |                |
-+----------------+       +---------+---------+       +----------------+
-                                   |
-                                   v
-                         +-----------------------------+
-                         |        Storage Layer        |
-                         |  +-----------------------+  |
-                         |  | partition-0 (orders-0)|  |
-                         |  | partition-1 (orders-1)|  |
-                         |  | partition-2 (orders-2)|  |
-                         |  +-----------------------+  |
-                         +-----------------------------+
+1. **TCP Server & Protocol Layer**: Listens on port `9092` using `asyncio` TCP sockets. Decodes newline-delimited JSON commands using a lightweight protocol parser.
+2. **Central Broker**: Coordinates the delivery pipeline, dynamically subscribing consumers to partitions and dispatching active publish events.
+3. **Storage Layer**: Divides topics into physical partition segments (`<topic>-<partition>.jsonl`) using key-based hash routing.
+4. **Consumer Groups**: Rebalances partitions round-robin among group members upon client join/leave events.
+
+### System Topology
+
+```mermaid
+graph TD
+    Producer[Producers] -->|Publish payload, key| Broker[CowpybaraMQ Broker]
+    Broker -->|Assign partition / stream| Consumer[Consumer Groups]
+    
+    subgraph Storage Layer
+        Broker -->|Write| Part0[topic-0.jsonl]
+        Broker -->|Write| Part1[topic-1.jsonl]
+        Broker -->|Write| Part2[topic-2.jsonl]
+    end
+    
+    subgraph Metadata
+        Broker -->|Commit Offsets| Offsets[group_offsets.json]
+    end
 ```
 
-## Project Structure
+### Messaging Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Producer
+    participant Broker
+    participant Storage
+    participant GroupManager
+    actor Consumer
+    
+    Producer->>Broker: PRODUCE (topic, payload, key)
+    Broker->>Storage: Append message to partition segment log
+    Storage-->>Broker: Return (partition_id, offset)
+    Broker-->>Producer: Return OK response with partition/offset details
+    Broker->>GroupManager: Check partition assignments
+    Broker->>Consumer: Push message payload over TCP connection
+    Consumer->>Broker: Acknowledge & update group offset
+```
+
+---
+
+## Folder Structure
 
 ```text
 cowpybaraMQ/
-├── cmd/               # Entrypoints for the broker and CLI tools
-├── internal/          # Core internal modules (config, messages, utils)
-├── docs/              # Additional documentation
-├── logs/              # Log files storage directory
-├── tests/             # Unit and integration tests
-├── Dockerfile         # Docker configuration for containerization
-├── docker-compose.yml # Compose file to run the broker in Docker
-└── requirements.txt   # Python dependencies
+├── cmd/
+│   ├── broker.py          # Asynchronous TCP Broker Server
+│   ├── producer.py        # Producer CLI Utility
+│   ├── consumer.py        # Consumer CLI Utility
+│   └── status.py          # Status Diagnostics Monitor
+├── docs/                  # In-depth architectural/protocol documentation
+│   ├── architecture.md
+│   ├── protocol.md
+│   ├── storage.md
+│   ├── consumer-groups.md
+│   └── partitions.md
+├── internal/              # Core modules (protocol parser, partition managers)
+├── logs/                  # Storage directories for partitioned JSONL segments
+├── tests/                 # Comprehensive Pytest suite (integration, unit, stress)
+├── pyproject.toml         # Python dev tooling setup (Black)
+├── requirements-dev.txt   # Development dependencies
+└── requirements.txt       # Core dependencies
 ```
 
-## Getting Started
+---
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/aryanp160/cowpybaraMQ.git
-   cd cowpybaraMQ
-   ```
+## Running Locally
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Start the broker:**
-   Open a terminal and run the broker:
-   ```bash
-   python cmd/broker.py
-   ```
-
-4. **Consume messages:**
-   Open a second terminal and subscribe to a topic:
-   ```bash
-   python cmd/consumer.py --topic alerts --offset 0
-   ```
-
-5. **Produce messages:**
-   Open a third terminal and publish a message:
-   ```bash
-   python cmd/producer.py --topic alerts --message "System starting"
-   ```
-
-## Protocol
-
-CowpybaraMQ uses a JSON-based protocol over TCP. Each request is a JSON object containing the action to perform.
-
-### Producing a Message
-Send a JSON object with the `produce` action, the topic, and the message payload:
-```json
-{
-  "action": "produce",
-  "topic": "users",
-  "payload": {"id": 1, "action": "login"}
-}
+### 1. Start the Broker
+Run the asynchronous TCP broker:
+```bash
+python cmd/broker.py
 ```
 
-### Consuming a Message
-Send a JSON object with the `consume` action, specifying the topic and offset:
-```json
-{
-  "action": "consume",
-  "topic": "users",
-  "offset": 0
-}
+### 2. Launch Status Diagnostics
+Verify broker state:
+```bash
+python cmd/status.py
 ```
 
-## Example
+### 3. Consume from Topic Group
+Run a consumer group member to consume messages:
+```bash
+python cmd/consumer.py --topic orders --group-id analytics-group --consumer-id c-1
+```
 
-Here's how a typical interaction flows:
+### 4. Publish Partitioned Messages
+Publish a message using key hashing routing:
+```bash
+python cmd/producer.py --topic orders --message "Order payload details" --key "user_abc"
+```
 
-1. **Producer connects** on `127.0.0.1:9092` and sends:
-   ```json
-   {
-     "action": "produce",
-     "topic": "notifications",
-     "payload": {"msg": "Hello World"}
-   }
-   ```
-   Broker responds:
-   ```json
-   {"status": "ok"}
-   ```
+---
 
-2. **Consumer connects** on `127.0.0.1:9092` and sends:
-   ```json
-   {
-     "action": "consume",
-     "topic": "notifications",
-     "offset": 0
-   }
-   ```
-   Broker responds with the message data:
-   ```json
-   {
-     "topic": "notifications",
-     "payload": {"msg": "Hello World"},
-     "timestamp": "2026-06-29T14:45:00"
-   }
-   ```
+## Benchmarks
 
-## License
+Measurements conducted locally under 1000 messages load:
 
-MIT
+| Operation | Throughput | Avg Latency |
+| :--- | :--- | :--- |
+| **PRODUCE** | ~1,331 msgs/sec | 0.75 ms |
+| **CONSUME** | ~21,318 msgs/sec | < 0.05 ms |
+
+---
+
+## Roadmap
+
+- [x] **V1 Base Broker**: Basic TCP server and single-broker sequential logging.
+- [x] **V2 Partitions & Rebalancing**: Dynamic partition segment logs, group rebalance triggers, and status diagnostics.
+- [ ] **V3 Replication**: Peer-to-peer broker cluster setups, replication logs, and leader election.
+
+---
+
+## Contributing
+
+We welcome contributions! Please open issues or submit pull requests. Ensure all code satisfies formatting (`black .`) and passes all linting tests (`flake8 .`).

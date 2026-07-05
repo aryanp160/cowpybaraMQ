@@ -18,6 +18,11 @@ class ConsumeRequest:
     group_id: str = None
 
 
+@dataclass
+class StatusRequest:
+    pass
+
+
 def parse_request(line: str) -> Any:
     """Parse a newline-delimited JSON string into a request object."""
     try:
@@ -28,6 +33,9 @@ def parse_request(line: str) -> Any:
     action = data.get("action")
     if not action:
         raise ValueError("Missing 'action' field")
+
+    if action == "status":
+        return StatusRequest()
 
     if action == "produce":
         topic = data.get("topic")
