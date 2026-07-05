@@ -22,7 +22,7 @@ class ReplicationManager:
         writer: asyncio.StreamWriter,
     ):
         """Leader side: Register a follower and stream historical logs."""
-        logger.info(f"Registering follower '{broker_id}' with offsets: {offsets}")
+        print(f"DEBUG: Registering follower '{broker_id}' with offsets: {offsets}")
         self.followers[broker_id] = writer
 
         # Send historical messages the follower is missing
@@ -55,6 +55,7 @@ class ReplicationManager:
         self, topic: str, partition: int, offset: int, payload: Dict[str, Any]
     ):
         """Leader side: Broadcast newly appended log entry."""
+        print(f"DEBUG: broadcast_replication self.followers = {list(self.followers.keys())}")
         if not self.followers:
             return
 
@@ -69,6 +70,7 @@ class ReplicationManager:
 
         for broker_id, writer in list(self.followers.items()):
             try:
+                print(f"DEBUG: Sending replication to {broker_id}")
                 writer.write(line)
                 await writer.drain()
                 logger.info(
@@ -131,6 +133,7 @@ class ReplicationManager:
 
                 while self.running:
                     line = await reader.readline()
+                    print(f"DEBUG: Follower received line: {line}")
                     if not line:
                         logger.warning("Disconnected from leader.")
                         break
