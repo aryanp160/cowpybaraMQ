@@ -56,7 +56,7 @@ class ReplicationManager:
     ):
         """Leader side: Broadcast newly appended log entry."""
         print(
-            f"DEBUG: broadcast_replication self.followers = {list(self.followers.keys())}"
+            f"DEBUG: broadcast_replication self.followers={list(self.followers.keys())}"
         )
         if not self.followers:
             return
