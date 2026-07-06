@@ -59,98 +59,105 @@ async def test_multi_broker_replication(tmp_path):
     fb_server = Server(host, follower_b_port, fb_broker)
     fb_task = asyncio.create_task(fb_server.start())
 
-    # Allow followers to connect and register
-    await asyncio.sleep(0.2)
-
-    # 4. Produce to Leader
-    reader, writer = await asyncio.open_connection(host, leader_port)
-    req = {
-        "action": "produce",
-        "topic": "replicated-topic",
-        "payload": {"val": 42},
-    }
-    writer.write((json.dumps(req) + "\n").encode())
-    await writer.drain()
-    resp = await reader.readline()
-    writer.close()
-    await writer.wait_closed()
-
-    # Verify leader response
-    resp_data = json.loads(resp.decode().strip())
-    assert resp_data["status"] == "ok"
-    assert resp_data["partition"] == 0
-    assert resp_data["offset"] == 0
-
-    # 5. Check follower logs with retry loop
-    messages_a = []
-    messages_b = []
-    for _ in range(30):
-        messages_a = fa_storage.read_all("replicated-topic", 0)
-        messages_b = fb_storage.read_all("replicated-topic", 0)
-        if len(messages_a) == 1 and len(messages_b) == 1:
-            break
-        await asyncio.sleep(0.1)
-
-    assert len(messages_a) == 1
-    assert messages_a[0]["message"]["val"] == 42
-    assert messages_a[0]["offset"] == 0
-
-    assert len(messages_b) == 1
-    assert messages_b[0]["message"]["val"] == 42
-    assert messages_b[0]["offset"] == 0
-
-    # 6. Verify followers reject Produce requests
-    reader_fa, writer_fa = await asyncio.open_connection(host, follower_a_port)
-    req_produce = {
-        "action": "produce",
-        "topic": "replicated-topic",
-        "payload": {"val": 99},
-    }
-    writer_fa.write((json.dumps(req_produce) + "\n").encode())
-    await writer_fa.drain()
-    resp_fa = await reader_fa.readline()
-    writer_fa.close()
-    await writer_fa.wait_closed()
-
-    resp_fa_data = json.loads(resp_fa.decode().strip())
-    assert resp_fa_data["status"] == "error"
-    assert "Not a leader" in resp_fa_data["message"]
-
-    # 7. Verify followers serve Consume requests
-    reader_c, writer_c = await asyncio.open_connection(host, follower_a_port)
-    req_consume = {
-        "action": "consume",
-        "topic": "replicated-topic",
-        "offset": 0,
-    }
-    writer_c.write((json.dumps(req_consume) + "\n").encode())
-    await writer_c.drain()
-    resp_c = await reader_c.readline()
-    writer_c.close()
-    await writer_c.wait_closed()
-
-    resp_c_data = json.loads(resp_c.decode().strip())
-    assert resp_c_data["status"] == "ok"
-    assert resp_c_data["payload"]["val"] == 42
-
-    # Clean up
-    await leader_server.stop()
-    await fa_server.stop()
-    await fb_server.stop()
-
-    await leader_broker.replication_manager.stop()
-    await fa_broker.replication_manager.stop()
-    await fb_broker.replication_manager.stop()
-
-    leader_task.cancel()
-    fa_task.cancel()
-    fb_task.cancel()
     try:
-        await leader_task
-        await fa_task
-        await fb_task
-    except asyncio.CancelledError:
-        pass
+        # Allow followers to connect and register
+        await asyncio.sleep(0.2)
+
+        # 4. Produce to Leader
+        reader, writer = await asyncio.open_connection(host, leader_port)
+        req = {
+            "action": "produce",
+            "topic": "replicated-topic",
+            "payload": {"val": 42},
+        }
+        writer.write((json.dumps(req) + "\n").encode())
+        await writer.drain()
+        resp = await reader.readline()
+        writer.close()
+        await writer.wait_closed()
+
+        # Verify leader response
+        resp_data = json.loads(resp.decode().strip())
+        assert resp_data["status"] == "ok"
+        assert resp_data["partition"] == 0
+        assert resp_data["offset"] == 0
+
+        # 5. Check follower logs with retry loop
+        messages_a = []
+        messages_b = []
+        for _ in range(30):
+            messages_a = fa_storage.read_all("replicated-topic", 0)
+            messages_b = fb_storage.read_all("replicated-topic", 0)
+            if len(messages_a) == 1 and len(messages_b) == 1:
+                break
+            await asyncio.sleep(0.1)
+
+        assert len(messages_a) == 1
+        assert messages_a[0]["message"]["val"] == 42
+        assert messages_a[0]["offset"] == 0
+
+        assert len(messages_b) == 1
+        assert messages_b[0]["message"]["val"] == 42
+        assert messages_b[0]["offset"] == 0
+
+        # 6. Verify followers reject Produce requests
+        reader_fa, writer_fa = await asyncio.open_connection(
+            host, follower_a_port
+        )
+        req_produce = {
+            "action": "produce",
+            "topic": "replicated-topic",
+            "payload": {"val": 99},
+        }
+        writer_fa.write((json.dumps(req_produce) + "\n").encode())
+        await writer_fa.drain()
+        resp_fa = await reader_fa.readline()
+        writer_fa.close()
+        await writer_fa.wait_closed()
+
+        resp_fa_data = json.loads(resp_fa.decode().strip())
+        assert resp_fa_data["status"] == "error"
+        assert "Not a leader" in resp_fa_data["message"]
+
+        # 7. Verify followers serve Consume requests
+        reader_c, writer_c = await asyncio.open_connection(
+            host, follower_a_port
+        )
+        req_consume = {
+            "action": "consume",
+            "topic": "replicated-topic",
+            "offset": 0,
+        }
+        writer_c.write((json.dumps(req_consume) + "\n").encode())
+        await writer_c.drain()
+        resp_c = await reader_c.readline()
+        writer_c.close()
+        await writer_c.wait_closed()
+
+        resp_c_data = json.loads(resp_c.decode().strip())
+        assert resp_c_data["status"] == "ok"
+        payload_data = resp_c_data.get("payload") or resp_c_data.get("message")
+        assert payload_data["val"] == 42
+
+    finally:
+        # Clean up
+        await leader_server.stop()
+        await fa_server.stop()
+        await fb_server.stop()
+
+        await leader_broker.replication_manager.stop()
+        await fa_broker.replication_manager.stop()
+        await fb_broker.replication_manager.stop()
+
+        leader_task.cancel()
+        fa_task.cancel()
+        fb_task.cancel()
+        try:
+            await leader_task
+            await fa_task
+            await fb_task
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.unit
