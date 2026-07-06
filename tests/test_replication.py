@@ -101,9 +101,7 @@ async def test_multi_broker_replication(tmp_path):
         assert messages_b[0]["offset"] == 0
 
         # 6. Verify followers reject Produce requests
-        reader_fa, writer_fa = await asyncio.open_connection(
-            host, follower_a_port
-        )
+        reader_fa, writer_fa = await asyncio.open_connection(host, follower_a_port)
         req_produce = {
             "action": "produce",
             "topic": "replicated-topic",
@@ -120,9 +118,7 @@ async def test_multi_broker_replication(tmp_path):
         assert "Not a leader" in resp_fa_data["message"]
 
         # 7. Verify followers serve Consume requests
-        reader_c, writer_c = await asyncio.open_connection(
-            host, follower_a_port
-        )
+        reader_c, writer_c = await asyncio.open_connection(host, follower_a_port)
         req_consume = {
             "action": "consume",
             "topic": "replicated-topic",
