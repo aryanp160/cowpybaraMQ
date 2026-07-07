@@ -8,15 +8,36 @@ logger = logging.getLogger(__name__)
 
 
 class ClusterManager:
-    def __init__(self, broker):
+    def __init__(
+        self,
+        broker,
+        broker_id=None,
+        cluster_members=None,
+        heartbeat_interval=None,
+        heartbeat_timeout=None,
+    ):
         self.broker = broker
-        from internal.config import CLUSTER_MEMBERS, BROKER_ID
+        from internal.config import (
+            CLUSTER_MEMBERS,
+            BROKER_ID,
+            HEARTBEAT_INTERVAL,
+            HEARTBEAT_TIMEOUT,
+        )
 
-        self.broker_id = BROKER_ID
+        self.broker_id = broker_id if broker_id is not None else BROKER_ID
+        self.heartbeat_interval = (
+            heartbeat_interval if heartbeat_interval is not None else HEARTBEAT_INTERVAL
+        )
+        self.heartbeat_timeout = (
+            heartbeat_timeout if heartbeat_timeout is not None else HEARTBEAT_TIMEOUT
+        )
 
+        members_str = (
+            cluster_members if cluster_members is not None else CLUSTER_MEMBERS
+        )
         # Parse cluster members: list of (host, port)
         self.members: List[tuple] = []
-        for m in CLUSTER_MEMBERS.split(","):
+        for m in members_str.split(","):
             m = m.strip()
             if m:
                 parts = m.split(":")
@@ -89,11 +110,9 @@ class HeartbeatService:
                         break
 
     async def _loop(self):
-        from internal.config import HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT
-
         while self.running:
             try:
-                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                await asyncio.sleep(self.cm.heartbeat_interval)
                 if self.cm.killed or self.cm.disconnected:
                     continue
 
@@ -122,7 +141,7 @@ class HeartbeatService:
                 else:
                     # Follower: check for heartbeat timeout
                     age = time.time() - self.last_heartbeat_time
-                    if age > HEARTBEAT_TIMEOUT:
+                    if age > self.cm.heartbeat_timeout:
                         self.cm.log_event(
                             f"Heartbeat timeout ({age:.2f}s). "
                             f"Triggering leader election."

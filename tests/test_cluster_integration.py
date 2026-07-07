@@ -15,7 +15,7 @@ def get_free_port():
     return port
 
 
-class TestCluster:
+class ClusterHelper:
     def __init__(self, tmp_path, ports):
         self.ports = ports
         self.tmp_path = tmp_path
@@ -27,24 +27,16 @@ class TestCluster:
         log_dir = self.tmp_path / f"broker-{port}"
         storage = Storage(log_dir=log_dir)
 
-        # Set environment variables for the config module
-        import os
-
-        os.environ["COWPYBARA_BROKER_ID"] = str(port)
-        os.environ["COWPYBARA_ROLE"] = role
-        os.environ["COWPYBARA_LEADER_HOST"] = "127.0.0.1"
-        os.environ["COWPYBARA_LEADER_PORT"] = str(leader_port)
-        os.environ["COWPYBARA_CLUSTER_MEMBERS"] = ",".join(
-            [f"127.0.0.1:{p}" for p in self.ports]
-        )
-        os.environ["COWPYBARA_HEARTBEAT_INTERVAL"] = "0.1"
-        os.environ["COWPYBARA_HEARTBEAT_TIMEOUT"] = "0.4"
-
+        cluster_members = ",".join([f"127.0.0.1:{p}" for p in self.ports])
         broker = Broker(
             storage=storage,
             role=role,
             leader_host="127.0.0.1",
             leader_port=leader_port,
+            broker_id=port,
+            cluster_members=cluster_members,
+            heartbeat_interval=0.05,
+            heartbeat_timeout=0.2,
         )
         server = Server("127.0.0.1", port, broker)
         task = asyncio.create_task(server.start())
@@ -83,7 +75,7 @@ async def test_cluster_failures_and_acks(tmp_path):
     # Leader is the first port (highest ID is max of ports)
     ports.sort()
 
-    cluster = TestCluster(tmp_path, ports)
+    cluster = ClusterHelper(tmp_path, ports)
 
     try:
         # Start brokers
@@ -154,9 +146,13 @@ async def test_cluster_failures_and_acks(tmp_path):
         await writer.wait_closed()
 
         # Verify replication consistency
-        await asyncio.sleep(0.1)
         for p in ports:
-            messages = cluster.brokers[p].storage.read_all("test-topic", 0)
+            messages = []
+            for _ in range(30):
+                messages = cluster.brokers[p].storage.read_all("test-topic", 0)
+                if len(messages) >= 2:
+                    break
+                await asyncio.sleep(0.05)
             assert len(messages) >= 2  # At least ack1 and ackall should be present
             # Verify ordering
             payloads = [m["message"]["msg"] for m in messages]

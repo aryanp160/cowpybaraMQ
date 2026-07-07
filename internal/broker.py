@@ -18,6 +18,10 @@ class Broker:
         role: str = None,
         leader_host: str = None,
         leader_port: int = None,
+        broker_id: int = None,
+        cluster_members: str = None,
+        heartbeat_interval: float = None,
+        heartbeat_timeout: float = None,
     ):
         from internal.config import BROKER_ROLE, LEADER_HOST, LEADER_PORT
         from internal.replication import ReplicationManager
@@ -43,7 +47,13 @@ class Broker:
 
         from internal.cluster import ClusterManager
 
-        self.cluster_manager = ClusterManager(self)
+        self.cluster_manager = ClusterManager(
+            self,
+            broker_id=broker_id,
+            cluster_members=cluster_members,
+            heartbeat_interval=heartbeat_interval,
+            heartbeat_timeout=heartbeat_timeout,
+        )
         asyncio.create_task(self.cluster_manager.start())
 
         self.replication_manager = ReplicationManager(self, role=role)
