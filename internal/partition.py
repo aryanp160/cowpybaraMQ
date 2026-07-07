@@ -38,7 +38,6 @@ class Partition:
         entry = {"offset": offset, "message": message}
 
         # Open in append mode ("a") to ensure we never overwrite logs
-        print(f"DEBUG: Partition append to {self.file_path} entry={entry}")
         with self.file_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
 
@@ -53,5 +52,4 @@ class Partition:
                 line = line.strip()
                 if line:
                     messages.append(json.loads(line))
-        print(f"DEBUG: Partition read_all {self.file_path} got={len(messages)}")
         return messages
