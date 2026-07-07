@@ -6,6 +6,8 @@ from internal.networking import Server
 from internal.storage import Storage
 from internal.broker import Broker
 
+import os
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -27,8 +29,17 @@ async def main():
     parser.add_argument(
         "--leader-port", type=int, default=9092, help="Leader port number"
     )
+    parser.add_argument("--broker-id", type=int, default=None, help="Broker ID")
+    parser.add_argument(
+        "--cluster-members", default=None, help="Comma-separated cluster members"
+    )
 
     args = parser.parse_args()
+
+    if args.broker_id is not None:
+        os.environ["COWPYBARA_BROKER_ID"] = str(args.broker_id)
+    if args.cluster_members is not None:
+        os.environ["COWPYBARA_CLUSTER_MEMBERS"] = args.cluster_members
 
     log_dir = Path(f"./logs-{args.port}")
 

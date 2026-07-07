@@ -41,6 +41,11 @@ class Broker:
         leader_host = leader_host or LEADER_HOST
         leader_port = leader_port or LEADER_PORT
 
+        from internal.cluster import ClusterManager
+
+        self.cluster_manager = ClusterManager(self)
+        asyncio.create_task(self.cluster_manager.start())
+
         self.replication_manager = ReplicationManager(self, role=role)
         if role == "follower":
             self.replication_manager.start_follower_sync(leader_host, leader_port)
@@ -108,11 +113,23 @@ class Broker:
         }
 
     async def publish(
-        self, topic: str, payload: Dict[str, Any], key: str = None
+        self, topic: str, payload: Dict[str, Any], key: str = None, acks: str = "1"
     ) -> Tuple[int, int]:
         """Store the message to disk and broadcast to all active consumers."""
+        if self.cluster_manager.killed:
+            raise ConnectionError("Broker is killed")
+        if self.cluster_manager.disconnected:
+            raise ConnectionError("Broker is disconnected from network")
+
         if self.replication_manager.role == "follower":
             raise PermissionError("Error: Not a leader")
+
+        import time
+
+        start_time = time.time()
+
+        # Log ACK mode
+        logger.info(f"Publish request received on topic {topic} with acks={acks}")
 
         self.msg_counter += 1
         # 1. Store message
@@ -122,6 +139,25 @@ class Broker:
         await self.replication_manager.broadcast_replication(
             topic, partition_id, offset, payload
         )
+
+        if acks == "all":
+            # Wait for replication acknowledgment from all active followers
+            success = await self.replication_manager.wait_for_acks(
+                topic, partition_id, offset
+            )
+            latency = (time.time() - start_time) * 1000
+            self.cluster_manager.latency_metrics.append(latency)
+            logger.info(
+                f"Replication for offset {offset} with acks=all finished in {latency:.2f}ms (success={success})"
+            )
+            if not success:
+                raise TimeoutError("Timed out waiting for replication ACKs")
+        elif acks == "1":
+            latency = (time.time() - start_time) * 1000
+            self.cluster_manager.latency_metrics.append(latency)
+            logger.info(
+                f"Replication for offset {offset} with acks=1 finished in {latency:.2f}ms"
+            )
 
         message_data = {
             "topic": topic,

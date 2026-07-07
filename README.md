@@ -138,7 +138,58 @@ Measurements conducted locally under 1000 messages load:
 
 - [x] **V1 Base Broker**: Basic TCP server and single-broker sequential logging.
 - [x] **V2 Partitions & Rebalancing**: Dynamic partition segment logs, group rebalance triggers, and status diagnostics.
-- [ ] **V3 Replication**: Peer-to-peer broker cluster setups, replication logs, and leader election.
+- [x] **V2 Partitions & Rebalancing**: Dynamic partition segment logs, group rebalance triggers, and status diagnostics.
+- [x] **V3 Replication**: Peer-to-peer broker cluster setups, heartbeat-based leader election, configurable producer ACKs, replication logs, and failover simulation.
+
+---
+
+## Replication and Failover Diagrams
+
+### 1. Normal Replication (acks=all)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Producer
+    participant Leader
+    participant Follower
+    
+    Producer->>Leader: PRODUCE (topic, payload, acks=all)
+    Leader->>Leader: Append locally
+    Leader->>Follower: ReplicateRequest (payload, offset)
+    Follower->>Follower: Append replicated message
+    Follower-->>Leader: ReplicateAckRequest (offset)
+    Leader-->>Producer: Return OK response
+```
+
+### 2. Leader Failure & Heartbeat Timeout
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Follower 9093
+    participant Follower 9094 (Candidate)
+    
+    Note over Follower 9093, Follower 9094: Leader dies / Heartbeat timeout occurs
+    Follower 9094->>Follower 9094: Trigger election
+    Follower 9094->>Follower 9093: ElectRequest (candidate_id=9094)
+    Follower 9093-->>Follower 9094: Return OK (broker_id=9093)
+    Note over Follower 9094: ID 9094 is highest active ID. Promotes itself to LEADER.
+```
+
+### 3. Recovery & Resynchronization
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant New Leader 9094
+    participant Recovered Broker 9092 (Follower)
+    
+    Note over Recovered Broker 9092: Restored/Recovered broker starts up
+    Recovered Broker 9092->>New Leader 9094: RegisterFollowerRequest (current offsets)
+    New Leader 9094-->>Recovered Broker 9092: Stream missing historical messages
+    Note over Recovered Broker 9092: Resynchronized and listening for new replication broadcasts
+```
 
 ---
 

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,8 @@ class ReplicationManager:
         self.role = role
         # broker_id -> writer
         self.followers: Dict[str, asyncio.StreamWriter] = {}
+        # broker_id -> {topic-partition: offset}
+        self.follower_offsets: Dict[str, Dict[str, int]] = {}
         self.sync_task = None
         self.running = True
 
@@ -24,6 +27,7 @@ class ReplicationManager:
         """Leader side: Register a follower and stream historical logs."""
         print(f"DEBUG: Registering follower '{broker_id}' with offsets: {offsets}")
         self.followers[broker_id] = writer
+        self.follower_offsets[broker_id] = {k: v - 1 for k, v in offsets.items()}
 
         # Send historical messages the follower is missing
         try:
@@ -50,14 +54,41 @@ class ReplicationManager:
             logger.error(f"Failed to catch up follower '{broker_id}': {e}")
             if broker_id in self.followers:
                 del self.followers[broker_id]
+            if broker_id in self.follower_offsets:
+                del self.follower_offsets[broker_id]
+
+    async def handle_replicate_ack(
+        self, broker_id: str, topic: str, partition: int, offset: int
+    ):
+        """Leader side: Handle replica progress ACK from a follower."""
+        if broker_id not in self.follower_offsets:
+            self.follower_offsets[broker_id] = {}
+        self.follower_offsets[broker_id][f"{topic}-{partition}"] = offset
+
+    async def wait_for_acks(
+        self, topic: str, partition: int, offset: int, timeout: float = 2.0
+    ) -> bool:
+        """Wait until all connected followers have replicated up to offset."""
+        start_time = time.time()
+        tp_key = f"{topic}-{partition}"
+        while time.time() - start_time < timeout:
+            if not self.followers:
+                return True
+            all_acked = True
+            for broker_id in list(self.followers.keys()):
+                fol_offset = self.follower_offsets.get(broker_id, {}).get(tp_key, -1)
+                if fol_offset < offset:
+                    all_acked = False
+                    break
+            if all_acked:
+                return True
+            await asyncio.sleep(0.02)
+        return False
 
     async def broadcast_replication(
         self, topic: str, partition: int, offset: int, payload: Dict[str, Any]
     ):
         """Leader side: Broadcast newly appended log entry."""
-        print(
-            f"DEBUG: broadcast_replication self.followers={list(self.followers.keys())}"
-        )
         if not self.followers:
             return
 
@@ -72,30 +103,33 @@ class ReplicationManager:
 
         for broker_id, writer in list(self.followers.items()):
             try:
-                print(f"DEBUG: Sending replication to {broker_id}")
                 writer.write(line)
                 await writer.drain()
-                logger.info(
-                    f"Successfully replicated {topic}-{partition} "
-                    f"offset {offset} to follower {broker_id}"
-                )
             except Exception as e:
                 logger.error(f"Failed to replicate to follower '{broker_id}': {e}")
                 if broker_id in self.followers:
                     del self.followers[broker_id]
+                if broker_id in self.follower_offsets:
+                    del self.follower_offsets[broker_id]
 
     def start_follower_sync(self, leader_host: str, leader_port: int):
         """Follower side: Start background sync task."""
+        if self.sync_task and not self.sync_task.done():
+            self.sync_task.cancel()
         self.sync_task = asyncio.create_task(self._sync_loop(leader_host, leader_port))
 
-    async def stop(self):
-        self.running = False
+    async def stop_follower_sync(self):
         if self.sync_task:
             self.sync_task.cancel()
             try:
                 await self.sync_task
             except asyncio.CancelledError:
                 pass
+            self.sync_task = None
+
+    async def stop(self):
+        self.running = False
+        await self.stop_follower_sync()
         # Close follower connections
         for writer in list(self.followers.values()):
             writer.close()
@@ -104,15 +138,23 @@ class ReplicationManager:
             except Exception:
                 pass
         self.followers.clear()
+        self.follower_offsets.clear()
 
     async def _sync_loop(self, leader_host: str, leader_port: int):
         """Follower side: Connect to leader, register, and apply logs."""
-        broker_id = f"follower-{id(self.broker)}"
+        broker_id = str(self.broker.cluster_manager.broker_id)
 
         while self.running:
+            if (
+                self.broker.cluster_manager.killed
+                or self.broker.cluster_manager.disconnected
+            ):
+                await asyncio.sleep(0.5)
+                continue
+
             try:
                 logger.info(
-                    f"Follower connecting to leader at " f"{leader_host}:{leader_port}"
+                    f"Follower connecting to leader at {leader_host}:{leader_port}"
                 )
                 reader, writer = await asyncio.open_connection(leader_host, leader_port)
 
@@ -134,8 +176,13 @@ class ReplicationManager:
                 logger.info("Registered with leader. Syncing logs...")
 
                 while self.running:
+                    if (
+                        self.broker.cluster_manager.killed
+                        or self.broker.cluster_manager.disconnected
+                    ):
+                        break
+
                     line = await reader.readline()
-                    print(f"DEBUG: Follower received line: {line}")
                     if not line:
                         logger.warning("Disconnected from leader.")
                         break
@@ -163,19 +210,27 @@ class ReplicationManager:
                                 partition_id=partition,
                                 offset=offset,
                             )
-                            logger.info(
-                                f"Replicated and stored {topic}-{partition} "
-                                f"offset {offset}"
-                            )
+
+                            # Send replicate_ack to leader
+                            ack_req = {
+                                "action": "replicate_ack",
+                                "broker_id": broker_id,
+                                "topic": topic,
+                                "partition": partition,
+                                "offset": offset,
+                            }
+                            writer.write((json.dumps(ack_req) + "\n").encode())
+                            await writer.drain()
+
                     except json.JSONDecodeError:
                         pass
 
             except ConnectionRefusedError:
-                logger.warning("Leader connection refused. Retrying in 1s...")
+                pass
             except (ConnectionError, asyncio.CancelledError):
                 pass
             except Exception as e:
                 logger.error(f"Unexpected error in sync loop: {e}")
 
             if self.running:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)

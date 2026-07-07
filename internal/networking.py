@@ -7,6 +7,11 @@ from internal.protocol import (
     ConsumeRequest,
     StatusRequest,
     RegisterFollowerRequest,
+    HeartbeatRequest,
+    ReplicateAckRequest,
+    ElectRequest,
+    ClusterStatusRequest,
+    SimulateFailureRequest,
 )
 from internal.broker import Broker
 
@@ -23,6 +28,10 @@ class Server:
     async def handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
+        if self.broker.cluster_manager.killed:
+            writer.close()
+            return
+
         addr = writer.get_extra_info("peername")
         logger.info(f"Accepted connection from {addr}")
 
@@ -30,6 +39,13 @@ class Server:
 
         try:
             while True:
+                if self.broker.cluster_manager.killed:
+                    break
+                if self.broker.cluster_manager.disconnected:
+                    # Connection simulated as disconnected
+                    await asyncio.sleep(0.5)
+                    continue
+
                 line = await reader.readline()
                 if not line:
                     break
@@ -46,6 +62,62 @@ class Server:
                         writer.write(format_response("ok", stats=stats))
                         await writer.drain()
 
+                    elif isinstance(request, SimulateFailureRequest):
+                        if request.type == "kill":
+                            self.broker.cluster_manager.killed = True
+                        elif request.type == "disconnect":
+                            self.broker.cluster_manager.disconnected = True
+                        elif request.type == "recover":
+                            self.broker.cluster_manager.killed = False
+                            self.broker.cluster_manager.disconnected = False
+                        writer.write(format_response("ok"))
+                        await writer.drain()
+
+                    elif isinstance(request, ClusterStatusRequest):
+                        stats = self.broker.get_stats()
+                        stats["broker_id"] = self.broker.cluster_manager.broker_id
+                        stats["role"] = self.broker.replication_manager.role
+                        stats["leader_id"] = (
+                            self.broker.cluster_manager.heartbeat_service.leader_id
+                        )
+                        stats["killed"] = self.broker.cluster_manager.killed
+                        stats["disconnected"] = self.broker.cluster_manager.disconnected
+                        stats["latencies"] = self.broker.cluster_manager.latency_metrics
+                        stats["followers"] = list(
+                            self.broker.replication_manager.followers.keys()
+                        )
+                        stats["follower_offsets"] = (
+                            self.broker.replication_manager.follower_offsets
+                        )
+                        writer.write(format_response("ok", stats=stats))
+                        await writer.drain()
+
+                    elif isinstance(request, HeartbeatRequest):
+                        self.broker.cluster_manager.heartbeat_service.receive_heartbeat(
+                            request.sender_id, request.role
+                        )
+
+                    elif isinstance(request, ReplicateAckRequest):
+                        await self.broker.replication_manager.handle_replicate_ack(
+                            request.broker_id,
+                            request.topic,
+                            request.partition,
+                            request.offset,
+                        )
+
+                    elif isinstance(request, ElectRequest):
+                        if (
+                            not self.broker.cluster_manager.killed
+                            and not self.broker.cluster_manager.disconnected
+                        ):
+                            writer.write(
+                                format_response(
+                                    "ok",
+                                    broker_id=self.broker.cluster_manager.broker_id,
+                                )
+                            )
+                            await writer.drain()
+
                     elif isinstance(request, RegisterFollowerRequest):
                         registered_follower_id = request.broker_id
                         asyncio.create_task(
@@ -56,16 +128,27 @@ class Server:
 
                     elif isinstance(request, ProduceRequest):
                         key = getattr(request, "key", None)
+                        acks = getattr(request, "acks", "1")
                         logger.info(
                             f"PRODUCE request: topic={request.topic}, "
-                            f"payload={request.payload}, key={key}"
+                            f"payload={request.payload}, key={key}, acks={acks}"
                         )
+                        if acks == "0":
+                            # Fire and forget: do not reply
+                            asyncio.create_task(
+                                self.broker.publish(
+                                    request.topic, request.payload, key, acks=acks
+                                )
+                            )
+                            continue
+
                         self.broker.active_producers += 1
                         try:
                             partition_id, offset = await self.broker.publish(
                                 request.topic,
                                 request.payload,
                                 key,
+                                acks=acks,
                             )
                             writer.write(
                                 format_response(
@@ -75,7 +158,7 @@ class Server:
                                 )
                             )
                             await writer.drain()
-                        except PermissionError as pe:
+                        except Exception as pe:
                             writer.write(format_response("error", message=str(pe)))
                             await writer.drain()
                         finally:
