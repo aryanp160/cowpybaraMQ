@@ -1,4 +1,4 @@
-# Cowpybara
+# CowpybaraMQ
 
 A distributed log-based message broker inspired by Apache Kafka, built in Python to explore distributed systems, replication, partitions, consumer groups, and fault tolerance.
 
@@ -34,8 +34,8 @@ A distributed log-based message broker inspired by Apache Kafka, built in Python
 
 ## Project Overview
 
-### Why Cowpybara Exists
-Cowpybara was built as an educational tool to demystify the inner workings of modern distributed log-based event systems like Apache Kafka. It showcases how to handle concurrent connections over TCP, maintain strict ordering constraints across partitions, load balance dynamic consumer groups, and coordinate failover replication without relying on external heavy-weight frameworks.
+### Why CowpybaraMQ Exists
+CowpybaraMQ was built as an educational tool to demystify the inner workings of modern distributed log-based event systems like Apache Kafka. It showcases how to handle concurrent connections over TCP, maintain strict ordering constraints across partitions, load balance dynamic consumer groups, and coordinate failover replication without relying on external heavy-weight frameworks.
 
 ### What Problems Message Brokers Solve
 In microservice architectures, systems need to communicate reliably without direct, synchronous HTTP/gRPC coupling. Message brokers act as intermediate coordinators, enabling:
@@ -46,10 +46,10 @@ In microservice architectures, systems need to communicate reliably without dire
 ### Queue Systems vs. Log-Based Brokers
 Traditional queues (e.g., RabbitMQ) delete messages immediately after consumer acknowledgment, supporting transient queues. 
 
-Log-based brokers (e.g., Apache Kafka, Cowpybara) treat topics as ordered, append-only commit logs on disk. Messages persist regardless of consumption status, allowing multiple independent consumer groups to replay history from arbitrary offsets.
+Log-based brokers (e.g., Apache Kafka, CowpybaraMQ) treat topics as ordered, append-only commit logs on disk. Messages persist regardless of consumption status, allowing multiple independent consumer groups to replay history from arbitrary offsets.
 
-### Cowpybara vs. Apache Kafka
-While Kafka utilizes ZooKeeper/KRaft, complex JVM memory tuning, and custom page caches, Cowpybara is designed for educational accessibility:
+### CowpybaraMQ vs. Apache Kafka
+While Kafka utilizes ZooKeeper/KRaft, complex JVM memory tuning, and custom page caches, CowpybaraMQ is designed for educational accessibility:
 - **Simplicity**: Written in lightweight async Python.
 - **Accessibility**: Zero external infrastructure dependencies (e.g. no JVM, no external database).
 - **Core Concepts**: Implements partitions, thread-safe persistent offsets, leader election, and multi-node TCP replication.
@@ -217,24 +217,92 @@ Metrics were measured using a dynamic leader-follower subprocess network. Produc
 
 ---
 
-## Screenshots & Demo
+## Visualizing CowpybaraMQ in Action
 
-Below are placeholders for the visualization dashboard and terminals:
-
-### Broker Dashboard
+### 1. Broker Cluster Status Monitor
+Running `python cmd/cluster_admin.py show_cluster` returns a real-time layout of the cluster state:
 ```text
-+-------------------------------------------------------+
-|              COWPYBARAMQ CLUSTER STATUS               |
-+-------------------------------------------------------+
-| Current Leader: 9094 (127.0.0.1:9094)                 |
-| Followers connected: [9093, 9092]                     |
-| Replication Latency: Avg 1.2ms                        |
-| Total messages: 14022 | Throughput: 1300 msgs/sec     |
-+-------------------------------------------------------+
+============================================================
+                 COWPYBARAMQ CLUSTER STATUS
+============================================================
+Current Leader: 9094 (127.0.0.1:9094)
+------------------------------------------------------------
+Broker: 9094 @ 127.0.0.1:9094 | Status: ALIVE | Role: leader
+  Disconnected (network partition): False
+  Followers connected: ['127.0.0.1:9093', '127.0.0.1:9092']
+  Follower Offsets: {'9093': 105, '9092': 105}
+  Topics: ['orders']
+    - Topic 'orders': 3 partitions
+  Replication Latency: Avg 1.25ms (from 105 acks)
+  Messages Replicated count: 105
+  Connected Clients: 1
+  Throughput: 1300 messages/sec
+------------------------------------------------------------
+Broker: 9093 @ 127.0.0.1:9093 | Status: ALIVE | Role: follower
+  Disconnected (network partition): False
+  Followers connected: []
+  Follower Offsets: {}
+  Topics: ['orders']
+    - Topic 'orders': 3 partitions
+  Replication Latency: Avg 0.00ms (from 0 acks)
+  Messages Replicated count: 0
+  Connected Clients: 0
+  Throughput: 0 messages/sec
+------------------------------------------------------------
 ```
 
-### Producer CLI
-`[PRODUCE] Topic: orders | Payload: '{"msg": "pay"}' | Port: 9094 -> OK (Partition 0, Offset 42)`
+### 2. Producer CLI Output
+When producing messages with `python cmd/producer.py --topic orders --message '{"event": "checkout"}' --key "user_1"`:
+```text
+[PRODUCE] Sending to 127.0.0.1:9094 (Leader)
+  Payload: {"event": "checkout"}
+  Routing Key: user_1 -> Hashed to Partition: 0
+  Response: {"status": "ok", "partition": 0, "offset": 42}
+```
+
+### 3. Consumer CLI Output
+Subscribed via `python cmd/consumer.py --topic orders --group-id order-processors --consumer-id c1`:
+```text
+[CONSUME] Registered to group: order-processors (c1)
+[CONSUME] Assigned partitions: [0, 1]
+[CONSUME] Partition 0 | Offset 42: {"event": "checkout"}
+[CONSUME] Committing offset 43... Success.
+```
+
+### 4. Broker Failover and Leader Election Logs
+```text
+2026-07-07 18:30:10,210 - internal.cluster - WARNING - [ELECTION EVENT] Heartbeat timeout (2.03s). Triggering leader election.
+2026-07-07 18:30:10,211 - internal.cluster - WARNING - [ELECTION EVENT] Broker 9093 initiating leader election.
+2026-07-07 18:30:10,345 - internal.cluster - WARNING - [ELECTION EVENT] Active brokers discovered: [9093, 9092]. Highest ID: 9093.
+2026-07-07 18:30:10,346 - internal.cluster - WARNING - [ELECTION EVENT] Broker 9093 promoting itself to LEADER.
+```
+
+---
+
+## Recording a Demonstration
+
+Follow this flow to record a terminal GIF/video (using tools like `asciinema` or `vhs`):
+
+1. **Start Cluster**: Launch three terminal tabs with `python cmd/broker.py --port 9092 --broker-id 9092`, `python cmd/broker.py --port 9093 --broker-id 9093`, and `python cmd/broker.py --port 9094 --broker-id 9094`.
+2. **Show Status**: In a fourth tab, run `python cmd/cluster_admin.py show_cluster` to demonstrate the active leader (9094) and followers.
+3. **Produce Messages**: Publish a batch of messages:
+   ```bash
+   python cmd/producer.py --topic payments --message "pay_event_1" --key "user_A"
+   ```
+4. **Consume Messages**: Start a consumer subscription and verify the payload is received:
+   ```bash
+   python cmd/consumer.py --topic payments --group-id payment-consumers --consumer-id pc1
+   ```
+5. **Inject Leader Crash**: Execute:
+   ```bash
+   python cmd/cluster_admin.py kill_leader --leader-port 9094
+   ```
+6. **Verify Bully Election**: Show the broker logs indicating broker 9093 took over as leader.
+7. **Produce on New Leader**: Send messages to port 9093 and verify followers replicate them.
+8. **Run Benchmark**: Display the high-throughput performance metrics:
+   ```bash
+   python cmd/benchmark.py --count 1000
+   ```
 
 ---
 
@@ -313,7 +381,7 @@ All socket packets are **newline-delimited JSON strings** over raw TCP.
 
 ## Comparison Matrix
 
-| Feature | Cowpybara | Apache Kafka | RabbitMQ | NATS |
+| Feature | CowpybaraMQ | Apache Kafka | RabbitMQ | NATS |
 | :--- | :---: | :---: | :---: | :---: |
 | **Log-Based** | Yes | Yes | No (Queue) | No (Queue/JetStream)|
 | **Ordering** | Partition | Partition | Queue | Stream |
