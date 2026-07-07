@@ -25,8 +25,14 @@ class Partition:
             for _ in f:
                 self.next_offset += 1
 
-    def append(self, message: Dict[str, Any]) -> int:
+    def append(self, message: Dict[str, Any], offset: int = None) -> int:
         """Append a message to the partition's JSONL file with an increasing offset."""
+        if offset is not None:
+            if offset < self.next_offset:
+                # Duplicate write, ignore and return the offset
+                return offset
+            self.next_offset = offset
+
         offset = self.next_offset
 
         entry = {"offset": offset, "message": message}
