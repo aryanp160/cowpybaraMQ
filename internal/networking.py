@@ -46,7 +46,11 @@ class Server:
                     await asyncio.sleep(0.5)
                     continue
 
-                line = await reader.readline()
+                try:
+                    line = await asyncio.wait_for(reader.readline(), timeout=0.2)
+                except asyncio.TimeoutError:
+                    continue
+
                 if not line:
                     break
 
@@ -183,9 +187,16 @@ class Server:
 
                         # Wait for the client to disconnect (EOF)
                         while True:
-                            eof_line = await reader.readline()
-                            if not eof_line:
+                            if self.broker.cluster_manager.killed:
                                 break
+                            try:
+                                eof_line = await asyncio.wait_for(
+                                    reader.readline(), timeout=0.2
+                                )
+                                if not eof_line:
+                                    break
+                            except asyncio.TimeoutError:
+                                continue
 
                         # Cancel subscription when client disconnects
                         sub_task.cancel()
