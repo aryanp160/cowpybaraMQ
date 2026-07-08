@@ -35,6 +35,10 @@ class Broker:
             self.storage.compression_threshold = compression_threshold
         self.offset_manager = offset_manager or OffsetManager()
         self.group_manager = group_manager or GroupManager()
+
+        from internal.metrics import MetricsManager
+
+        self.metrics = MetricsManager(self)
         # Map of topic -> list of active standalone consumer queues
         self.consumers: Dict[str, List[asyncio.Queue]] = {}
         # group_id -> topic -> consumer_id -> asyncio.Event
@@ -210,6 +214,13 @@ class Broker:
                     if q:
                         await q.put(message_data)
 
+        # Record metrics
+        import json
+
+        payload_bytes = len(json.dumps(payload).encode("utf-8"))
+        total_prod_latency = (time.time() - start_time) * 1000
+        self.metrics.record_produce(payload_bytes, total_prod_latency)
+
         return partition_id, offset
 
     async def subscribe(
@@ -281,9 +292,18 @@ class Broker:
                         msg_data = get_task.result()
                         p = msg_data.get("partition", 0)
                         if p in assigned_partitions:
+                            import time
+
+                            start_c = time.time()
                             response = format_response("ok", **msg_data)
                             writer.write(response)
                             await writer.drain()
+                            latency_c = (time.time() - start_c) * 1000
+                            import json
+
+                            msg_bytes = len(json.dumps(msg_data).encode("utf-8"))
+                            self.metrics.record_consume(msg_bytes, latency_c)
+
                             msg_offset = msg_data.get("offset")
                             if msg_offset is not None:
                                 self.group_manager.update_offset(
@@ -325,9 +345,18 @@ class Broker:
         for msg in historical_messages:
             msg_offset = msg.get("offset")
             if msg_offset is not None and msg_offset >= offset:
+                import time
+
+                start_c = time.time()
                 response = format_response("ok", **msg)
                 writer.write(response)
                 await writer.drain()
+                latency_c = (time.time() - start_c) * 1000
+                import json
+
+                msg_bytes = len(json.dumps(msg).encode("utf-8"))
+                self.metrics.record_consume(msg_bytes, latency_c)
+
                 if consumer_id:
                     self.offset_manager.update_offset(
                         consumer_id, topic, msg_offset + 1
@@ -343,9 +372,18 @@ class Broker:
             # 3. Stream new messages (keeps connection alive)
             while True:
                 msg_data = await queue.get()
+                import time
+
+                start_c = time.time()
                 response = format_response("ok", **msg_data)
                 writer.write(response)
                 await writer.drain()
+                latency_c = (time.time() - start_c) * 1000
+                import json
+
+                msg_bytes = len(json.dumps(msg_data).encode("utf-8"))
+                self.metrics.record_consume(msg_bytes, latency_c)
+
                 if consumer_id:
                     msg_offset = msg_data.get("offset")
                     if msg_offset is not None:
@@ -423,9 +461,18 @@ class Broker:
             for msg in historical_messages:
                 msg_offset = msg.get("offset")
                 if msg_offset is not None and msg_offset >= group_offset:
+                    import time
+
+                    start_c = time.time()
                     response = format_response("ok", **msg)
                     writer.write(response)
                     await writer.drain()
+                    latency_c = (time.time() - start_c) * 1000
+                    import json
+
+                    msg_bytes = len(json.dumps(msg).encode("utf-8"))
+                    self.metrics.record_consume(msg_bytes, latency_c)
+
                     self.group_manager.update_offset(group_id, tp, msg_offset + 1)
         except asyncio.CancelledError:
             pass

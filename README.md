@@ -225,6 +225,32 @@ When `gzip` compression is enabled:
 
 ---
 
+## Internal Metrics Subsystem
+
+CowpybaraMQ includes an integrated real-time metrics collection subsystem managed by `MetricsManager` in `internal/metrics.py`.
+
+### Metrics Collected
+- **Broker**: Messages produced/consumed, bytes written/read, replication events, and leader changes.
+- **Performance**: Real-time throughput (messages/sec, bytes/sec), average produce/consume latencies (ms).
+- **Storage**: Log sizes, partition file allocations, and absolute directory disk usage.
+- **Consumers**: Connected consumers, active groups, and real-time lag tracking per consumer group.
+
+### Programmatic Usage
+```python
+from internal.metrics import MetricsManager
+
+# Initialize metrics manager linked to a broker
+metrics = MetricsManager(broker)
+
+# Get metrics snapshot as a python dict
+snapshot = metrics.snapshot()
+
+# Print pretty formatted metrics report to console
+print(metrics.pretty_print())
+```
+
+---
+
 ## Visualizing CowpybaraMQ in Action
 
 ### 1. Broker Cluster Status Monitor

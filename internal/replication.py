@@ -10,13 +10,25 @@ logger = logging.getLogger(__name__)
 class ReplicationManager:
     def __init__(self, broker, role: str = "leader"):
         self.broker = broker
-        self.role = role
+        self._role = role
         # broker_id -> writer
         self.followers: Dict[str, asyncio.StreamWriter] = {}
         # broker_id -> {topic-partition: offset}
         self.follower_offsets: Dict[str, Dict[str, int]] = {}
         self.sync_task = None
         self.running = True
+
+    @property
+    def role(self):
+        return self._role
+
+    @role.setter
+    def role(self, new_role):
+        old_role = getattr(self, "_role", None)
+        self._role = new_role
+        if old_role is not None and old_role != new_role:
+            if hasattr(self.broker, "metrics") and self.broker.metrics:
+                self.broker.metrics.record_leader_change()
 
     async def register_follower(
         self,
@@ -64,6 +76,8 @@ class ReplicationManager:
         if broker_id not in self.follower_offsets:
             self.follower_offsets[broker_id] = {}
         self.follower_offsets[broker_id][f"{topic}-{partition}"] = offset
+        if hasattr(self.broker, "metrics") and self.broker.metrics:
+            self.broker.metrics.record_replication()
 
     async def wait_for_acks(
         self, topic: str, partition: int, offset: int, timeout: float = 2.0
