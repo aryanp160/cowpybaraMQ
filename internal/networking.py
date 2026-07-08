@@ -43,6 +43,8 @@ class Server:
                     break
                 if self.broker.cluster_manager.disconnected:
                     # Connection simulated as disconnected
+                    if reader.at_eof():
+                        break
                     await asyncio.sleep(0.5)
                     continue
 
