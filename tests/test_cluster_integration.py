@@ -188,12 +188,15 @@ async def test_cluster_failures_and_acks(tmp_path):
 
         # Recover Follower 0
         cluster.brokers[ports[0]].cluster_manager.killed = False
-        # Allow follower to reconnect and sync
-        await asyncio.sleep(0.4)
 
-        # Verify Follower 0 caught up and recovered the message
-        msgs_f0 = cluster.brokers[ports[0]].storage.read_all("test-topic", 0)
-        payloads_f0 = [m["message"]["msg"] for m in msgs_f0]
+        # Verify Follower 0 caught up and recovered the message (with retry)
+        payloads_f0 = []
+        for _ in range(30):
+            msgs_f0 = cluster.brokers[ports[0]].storage.read_all("test-topic", 0)
+            payloads_f0 = [m["message"]["msg"] for m in msgs_f0]
+            if "after-crash" in payloads_f0:
+                break
+            await asyncio.sleep(0.05)
         assert "after-crash" in payloads_f0
 
         # ----------------------------------------------------
@@ -219,10 +222,15 @@ async def test_cluster_failures_and_acks(tmp_path):
 
         # Recover Follower 1
         cluster.brokers[ports[1]].cluster_manager.disconnected = False
-        await asyncio.sleep(0.4)
 
-        msgs_f1 = cluster.brokers[ports[1]].storage.read_all("test-topic", 0)
-        payloads_f1 = [m["message"]["msg"] for m in msgs_f1]
+        # Verify Follower 1 caught up and recovered the message (with retry)
+        payloads_f1 = []
+        for _ in range(30):
+            msgs_f1 = cluster.brokers[ports[1]].storage.read_all("test-topic", 0)
+            payloads_f1 = [m["message"]["msg"] for m in msgs_f1]
+            if "partition-test" in payloads_f1:
+                break
+            await asyncio.sleep(0.05)
         assert "partition-test" in payloads_f1
 
         # ----------------------------------------------------
