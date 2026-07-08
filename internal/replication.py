@@ -152,6 +152,7 @@ class ReplicationManager:
                 await asyncio.sleep(0.5)
                 continue
 
+            writer = None
             try:
                 logger.info(
                     f"Follower connecting to leader at {leader_host}:{leader_port}"
@@ -235,6 +236,13 @@ class ReplicationManager:
                 pass
             except Exception as e:
                 logger.error(f"Unexpected error in sync loop: {e}")
+            finally:
+                if writer:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
 
             if self.running:
                 await asyncio.sleep(0.5)
