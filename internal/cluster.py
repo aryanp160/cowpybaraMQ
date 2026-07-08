@@ -174,15 +174,19 @@ class ElectionManager:
             if port == self.cm.broker_id:
                 continue
             try:
-                reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(host, port), timeout=0.2
-                )
-                writer.write(line)
-                await writer.drain()
-                resp = await reader.readline()
-                writer.close()
-                await writer.wait_closed()
 
+                async def _send_and_read():
+                    r, w = await asyncio.open_connection(host, port)
+                    try:
+                        w.write(line)
+                        await w.drain()
+                        res = await r.readline()
+                        return res
+                    finally:
+                        w.close()
+                        await w.wait_closed()
+
+                resp = await asyncio.wait_for(_send_and_read(), timeout=0.3)
                 if resp:
                     data = json.loads(resp.decode().strip())
                     if data.get("status") == "ok":

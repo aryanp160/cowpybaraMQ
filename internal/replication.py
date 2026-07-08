@@ -182,7 +182,11 @@ class ReplicationManager:
                     ):
                         break
 
-                    line = await reader.readline()
+                    try:
+                        line = await asyncio.wait_for(reader.readline(), timeout=0.2)
+                    except asyncio.TimeoutError:
+                        continue
+
                     if not line:
                         logger.warning("Disconnected from leader.")
                         break
