@@ -8,6 +8,8 @@ PORT = int(os.getenv("COWPYBARA_PORT", 9092))
 # Storage configuration
 LOG_DIR = os.getenv("COWPYBARA_LOG_DIR", "./logs")
 NUM_PARTITIONS = int(os.getenv("COWPYBARA_NUM_PARTITIONS", 3))
+COMPRESSION_TYPE = os.getenv("COWPYBARA_COMPRESSION_TYPE", "none")
+COMPRESSION_THRESHOLD = int(os.getenv("COWPYBARA_COMPRESSION_THRESHOLD", 512))
 
 # Replication configuration
 BROKER_ROLE = os.getenv("COWPYBARA_ROLE", "leader")

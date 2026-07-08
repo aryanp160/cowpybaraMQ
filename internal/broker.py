@@ -22,11 +22,17 @@ class Broker:
         cluster_members: str = None,
         heartbeat_interval: float = None,
         heartbeat_timeout: float = None,
+        compression_type: str = None,
+        compression_threshold: int = None,
     ):
         from internal.config import BROKER_ROLE, LEADER_HOST, LEADER_PORT
         from internal.replication import ReplicationManager
 
         self.storage = storage
+        if compression_type is not None:
+            self.storage.compression_type = compression_type
+        if compression_threshold is not None:
+            self.storage.compression_threshold = compression_threshold
         self.offset_manager = offset_manager or OffsetManager()
         self.group_manager = group_manager or GroupManager()
         # Map of topic -> list of active standalone consumer queues

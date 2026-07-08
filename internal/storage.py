@@ -2,7 +2,7 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from internal.config import NUM_PARTITIONS
+from internal.config import NUM_PARTITIONS, COMPRESSION_TYPE, COMPRESSION_THRESHOLD
 from internal.partition import Partition
 
 
@@ -10,6 +10,8 @@ from internal.partition import Partition
 class Storage:
     log_dir: Path
     num_partitions: int = NUM_PARTITIONS
+    compression_type: str = COMPRESSION_TYPE
+    compression_threshold: int = COMPRESSION_THRESHOLD
     # topic_name -> partition_id -> Partition
     partitions: Dict[str, Dict[int, Partition]] = field(
         init=False, default_factory=dict
@@ -69,7 +71,12 @@ class Storage:
                 partition_id = 0
 
         partition = self.get_partition(topic_name, partition_id)
-        offset = partition.append(message, offset)
+        offset = partition.append(
+            message,
+            offset,
+            codec=self.compression_type,
+            threshold=self.compression_threshold,
+        )
         return partition_id, offset
 
     def read_all(self, topic_name: str, partition_id: int = 0) -> List[Dict[str, Any]]:

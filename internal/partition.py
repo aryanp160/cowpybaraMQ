@@ -25,7 +25,13 @@ class Partition:
             for _ in f:
                 self.next_offset += 1
 
-    def append(self, message: Dict[str, Any], offset: int = None) -> int:
+    def append(
+        self,
+        message: Dict[str, Any],
+        offset: int = None,
+        codec: str = "none",
+        threshold: int = 512,
+    ) -> int:
         """Append a message to the partition's JSONL file with an increasing offset."""
         if offset is not None:
             if offset < self.next_offset:
@@ -35,7 +41,10 @@ class Partition:
 
         offset = self.next_offset
 
-        entry = {"offset": offset, "message": message}
+        from internal.compression import compress_payload
+
+        compressed_msg, _ = compress_payload(message, codec, threshold)
+        entry = {"offset": offset, "message": compressed_msg}
 
         # Open in append mode ("a") to ensure we never overwrite logs
         with self.file_path.open("a", encoding="utf-8") as f:
@@ -46,10 +55,15 @@ class Partition:
 
     def read_all(self) -> List[Dict[str, Any]]:
         """Read all messages from the partition's JSONL file."""
+        from internal.compression import decompress_payload
+
         messages = []
         with self.file_path.open("r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    messages.append(json.loads(line))
+                    entry = json.loads(line)
+                    if "message" in entry:
+                        entry["message"] = decompress_payload(entry["message"])
+                    messages.append(entry)
         return messages

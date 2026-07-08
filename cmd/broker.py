@@ -33,6 +33,18 @@ async def main():
     parser.add_argument(
         "--cluster-members", default=None, help="Comma-separated cluster members"
     )
+    parser.add_argument(
+        "--compression-type",
+        choices=["none", "gzip"],
+        default=None,
+        help="Compression type",
+    )
+    parser.add_argument(
+        "--compression-threshold",
+        type=int,
+        default=None,
+        help="Compression threshold size in bytes",
+    )
 
     args = parser.parse_args()
 
@@ -40,6 +52,10 @@ async def main():
         os.environ["COWPYBARA_BROKER_ID"] = str(args.broker_id)
     if args.cluster_members is not None:
         os.environ["COWPYBARA_CLUSTER_MEMBERS"] = args.cluster_members
+    if args.compression_type is not None:
+        os.environ["COWPYBARA_COMPRESSION_TYPE"] = args.compression_type
+    if args.compression_threshold is not None:
+        os.environ["COWPYBARA_COMPRESSION_THRESHOLD"] = str(args.compression_threshold)
 
     log_dir = Path(f"./logs-{args.port}")
 
@@ -49,6 +65,8 @@ async def main():
         role=args.role,
         leader_host=args.leader_host,
         leader_port=args.leader_port,
+        compression_type=args.compression_type,
+        compression_threshold=args.compression_threshold,
     )
     server = Server(args.host, args.port, broker)
 
