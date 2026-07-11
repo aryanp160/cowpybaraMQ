@@ -253,7 +253,23 @@ print(metrics.pretty_print())
 
 ## Visualizing CowpybaraMQ in Action
 
-### 1. Broker Cluster Status Monitor
+### 1. Terminal Dashboard
+CowpybaraMQ includes an auto-refreshing terminal dashboard powered by `Rich`.
+
+Run the dashboard:
+```bash
+python cmd/dashboard.py
+```
+
+It dynamically displays:
+- **Cluster**: Current Leader, Node state (ALIVE/DEAD/UNREACHABLE), Active nodes, and Uptime.
+- **Topics**: Registered topics, partition counts, and total message counts.
+- **Consumers**: Active groups, number of assigned members, and current consumer group lag.
+- **Metrics**: Production/consumption throughput (msgs/sec, bytes/sec), average latencies, compression ratio, replication lag, and total bytes read/written.
+- **Storage**: Directory allocations, total log sizes, and individual partition storage usage visualization.
+- **Faults/Failures**: Offline brokers, triggered elections, and leader transition counts.
+
+### 2. Broker Cluster Status Monitor
 Running `python cmd/cluster_admin.py show_cluster` returns a real-time layout of the cluster state:
 ```text
 ============================================================

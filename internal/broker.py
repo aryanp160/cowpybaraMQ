@@ -130,6 +130,11 @@ class Broker:
             "messages_sec": self.messages_per_second,
             "connected_producers": self.active_producers,
             "partition_ownership": ownership_map,
+            "metrics": (
+                self.metrics.snapshot()
+                if hasattr(self, "metrics") and self.metrics
+                else None
+            ),
         }
 
     async def publish(
@@ -216,10 +221,17 @@ class Broker:
 
         # Record metrics
         import json
+        from internal.compression import compress_payload
 
+        compressed_msg, _ = compress_payload(
+            payload,
+            self.storage.compression_type,
+            self.storage.compression_threshold,
+        )
+        compressed_bytes = len(json.dumps(compressed_msg).encode("utf-8"))
         payload_bytes = len(json.dumps(payload).encode("utf-8"))
         total_prod_latency = (time.time() - start_time) * 1000
-        self.metrics.record_produce(payload_bytes, total_prod_latency)
+        self.metrics.record_produce(compressed_bytes, total_prod_latency, payload_bytes)
 
         return partition_id, offset
 

@@ -14,6 +14,7 @@ class MetricsManager:
         self.messages_produced = 0
         self.messages_consumed = 0
         self.bytes_written = 0
+        self.uncompressed_bytes_written = 0
         self.bytes_read = 0
         self.replication_events = 0
         self.leader_changes = 0
@@ -22,9 +23,14 @@ class MetricsManager:
         self.produce_latencies: List[float] = []
         self.consume_latencies: List[float] = []
 
-    def record_produce(self, size_bytes: int, latency_ms: float):
+    def record_produce(
+        self, size_bytes: int, latency_ms: float, uncompressed_size: int = None
+    ):
         self.messages_produced += 1
         self.bytes_written += size_bytes
+        self.uncompressed_bytes_written += (
+            uncompressed_size if uncompressed_size is not None else size_bytes
+        )
         self.produce_latencies.append(latency_ms)
 
     def record_consume(self, size_bytes: int, latency_ms: float):
@@ -57,6 +63,11 @@ class MetricsManager:
 
         tp_msg_sec = self.messages_produced / elapsed
         tp_bytes_sec = self.bytes_written / elapsed
+        comp_ratio = (
+            self.uncompressed_bytes_written / max(1, self.bytes_written)
+            if self.bytes_written > 0
+            else 1.0
+        )
 
         # Default storage metrics
         partition_sizes: Dict[str, int] = {}
@@ -127,15 +138,18 @@ class MetricsManager:
                 "messages_produced": self.messages_produced,
                 "messages_consumed": self.messages_consumed,
                 "bytes_written": self.bytes_written,
+                "uncompressed_bytes_written": self.uncompressed_bytes_written,
                 "bytes_read": self.bytes_read,
                 "replication_events": self.replication_events,
                 "leader_changes": self.leader_changes,
+                "uptime_seconds": elapsed,
             },
             "performance": {
                 "average_produce_latency_ms": avg_prod_lat,
                 "average_consume_latency_ms": avg_cons_lat,
                 "throughput_messages_sec": tp_msg_sec,
                 "throughput_bytes_sec": tp_bytes_sec,
+                "compression_ratio": comp_ratio,
             },
             "storage": {
                 "partition_sizes": partition_sizes,
