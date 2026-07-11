@@ -349,7 +349,7 @@ async def main():
             c = r["consume"]
 
             f.write(
-                f"| {cnt:,} | {comp} | PRODUCE | {p['throughput_msgs']:.1f} | {format_bytes(int(p['throughput_bytes']))}/s | {p['avg_lat']:.2f} | {p['p95_lat']:.2f} | {p['p99_lat']:.2f} | {p['compression_ratio']:.2fx} | {p['cpu']:.1f}% | {p['memory']:.1f} |\n"
+                f"| {cnt:,} | {comp} | PRODUCE | {p['throughput_msgs']:.1f} | {format_bytes(int(p['throughput_bytes']))}/s | {p['avg_lat']:.2f} | {p['p95_lat']:.2f} | {p['p99_lat']:.2f} | {p['compression_ratio']:.2f}x | {p['cpu']:.1f}% | {p['memory']:.1f} |\n"
             )
             f.write(
                 f"| {cnt:,} | {comp} | CONSUME | {c['throughput_msgs']:.1f} | {format_bytes(int(c['throughput_bytes']))}/s | {c['avg_lat']:.2f} | {c['p95_lat']:.2f} | {c['p99_lat']:.2f} | N/A | {c['cpu']:.1f}% | {c['memory']:.1f} |\n"
