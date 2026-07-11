@@ -64,10 +64,10 @@ class ReplicationManager:
                             await writer.drain()
         except (ConnectionError, asyncio.CancelledError) as e:
             logger.error(f"Failed to catch up follower '{broker_id}': {e}")
-            if broker_id in self.followers:
+            if self.followers.get(broker_id) == writer:
                 del self.followers[broker_id]
-            if broker_id in self.follower_offsets:
-                del self.follower_offsets[broker_id]
+                if broker_id in self.follower_offsets:
+                    del self.follower_offsets[broker_id]
 
     async def handle_replicate_ack(
         self, broker_id: str, topic: str, partition: int, offset: int
@@ -121,10 +121,10 @@ class ReplicationManager:
                 await writer.drain()
             except Exception as e:
                 logger.error(f"Failed to replicate to follower '{broker_id}': {e}")
-                if broker_id in self.followers:
+                if self.followers.get(broker_id) == writer:
                     del self.followers[broker_id]
-                if broker_id in self.follower_offsets:
-                    del self.follower_offsets[broker_id]
+                    if broker_id in self.follower_offsets:
+                        del self.follower_offsets[broker_id]
 
     def start_follower_sync(self, leader_host: str, leader_port: int):
         """Follower side: Start background sync task."""
