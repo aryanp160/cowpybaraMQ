@@ -204,16 +204,25 @@ sequenceDiagram
 
 ## Benchmarks
 
-Benchmarks executed locally using `cmd/benchmark.py` (500 payload iterations with 100-byte entries):
+CowpybaraMQ includes a comprehensive automated benchmarking suite located in `cmd/benchmark.py`.
 
-| Operation | Throughput (msgs/sec) | Latency p99 (ms) |
-| :--- | :--- | :--- |
-| **PRODUCE (acks=0)** | ~90,691.58 msgs/sec | 0.51 ms |
-| **PRODUCE (acks=1)** | ~670.74 msgs/sec | 8.59 ms |
-| **CONSUME** | ~26,114.19 msgs/sec | < 0.05 ms |
+### Running Benchmarks
+Run benchmarks for multiple batch sizes (1,000, 10,000, 50,000, and 100,000 messages) with and without `gzip` compression:
+```bash
+python cmd/benchmark.py --counts "1000,10000,50000,100000"
+```
 
-### Testing Methodology
-Metrics were measured using a dynamic leader-follower subprocess network. Producers send a 100-byte structured JSON payload. Disk write latencies reflect local NVMe SSD append operations.
+### Metrics Collected
+- **Throughput**: Messages per second and raw bytes per second.
+- **Latency**: Average, P95, and P99 latencies (ms) for both PRODUCE and CONSUME operations.
+- **Resources**: CPU usage (%) and Memory footprint (MB) of the broker process.
+- **Data Efficiency**: Real-time compression ratios.
+
+### Output Artifacts
+Each benchmark run generates:
+- **Terminal Summary**: Real-time output tables for quick verification.
+- **Markdown Report (`benchmark_report.md`)**: A detailed analysis log documenting environment stats, resource tables, and replication efficiency.
+- **CSV Export (`benchmark_results.csv`)**: Raw tabular results suitable for plotting or importing into spreadsheet tools.
 
 ### Compression Benchmarks Expectations
 When `gzip` compression is enabled:
