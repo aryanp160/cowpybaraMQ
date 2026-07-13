@@ -248,7 +248,9 @@ async def test_cluster_failures_and_acks(tmp_path):
 
         # The new leader should be the active broker with highest ID.
         # Since ports[2] is dead, ports[1] must become the new leader!
-        assert cluster.brokers[ports[1]].replication_manager.role == "leader", f"Leader election failed. ports[1] role: {cluster.brokers[ports[1]].replication_manager.role}"
+        assert (
+            cluster.brokers[ports[1]].replication_manager.role == "leader"
+        ), f"Leader election failed. ports[1] role: {cluster.brokers[ports[1]].replication_manager.role}"
 
         # Verify new leader accepts Produce requests
         reader, writer = await asyncio.open_connection("127.0.0.1", ports[1])
