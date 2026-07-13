@@ -221,7 +221,10 @@ class Server:
         finally:
             if (
                 registered_follower_id
-                and registered_follower_id in self.broker.replication_manager.followers
+                and self.broker.replication_manager.followers.get(
+                    registered_follower_id
+                )
+                == writer
             ):
                 del self.broker.replication_manager.followers[registered_follower_id]
             logger.info(f"Closing connection to {addr}")

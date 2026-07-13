@@ -10,13 +10,25 @@ logger = logging.getLogger(__name__)
 class ReplicationManager:
     def __init__(self, broker, role: str = "leader"):
         self.broker = broker
-        self.role = role
+        self._role = role
         # broker_id -> writer
         self.followers: Dict[str, asyncio.StreamWriter] = {}
         # broker_id -> {topic-partition: offset}
         self.follower_offsets: Dict[str, Dict[str, int]] = {}
         self.sync_task = None
         self.running = True
+
+    @property
+    def role(self):
+        return self._role
+
+    @role.setter
+    def role(self, new_role):
+        old_role = getattr(self, "_role", None)
+        self._role = new_role
+        if old_role is not None and old_role != new_role:
+            if hasattr(self.broker, "metrics") and self.broker.metrics:
+                self.broker.metrics.record_leader_change()
 
     async def register_follower(
         self,
@@ -52,10 +64,10 @@ class ReplicationManager:
                             await writer.drain()
         except (ConnectionError, asyncio.CancelledError) as e:
             logger.error(f"Failed to catch up follower '{broker_id}': {e}")
-            if broker_id in self.followers:
+            if self.followers.get(broker_id) == writer:
                 del self.followers[broker_id]
-            if broker_id in self.follower_offsets:
-                del self.follower_offsets[broker_id]
+                if broker_id in self.follower_offsets:
+                    del self.follower_offsets[broker_id]
 
     async def handle_replicate_ack(
         self, broker_id: str, topic: str, partition: int, offset: int
@@ -64,6 +76,8 @@ class ReplicationManager:
         if broker_id not in self.follower_offsets:
             self.follower_offsets[broker_id] = {}
         self.follower_offsets[broker_id][f"{topic}-{partition}"] = offset
+        if hasattr(self.broker, "metrics") and self.broker.metrics:
+            self.broker.metrics.record_replication()
 
     async def wait_for_acks(
         self, topic: str, partition: int, offset: int, timeout: float = 2.0
@@ -107,10 +121,10 @@ class ReplicationManager:
                 await writer.drain()
             except Exception as e:
                 logger.error(f"Failed to replicate to follower '{broker_id}': {e}")
-                if broker_id in self.followers:
+                if self.followers.get(broker_id) == writer:
                     del self.followers[broker_id]
-                if broker_id in self.follower_offsets:
-                    del self.follower_offsets[broker_id]
+                    if broker_id in self.follower_offsets:
+                        del self.follower_offsets[broker_id]
 
     def start_follower_sync(self, leader_host: str, leader_port: int):
         """Follower side: Start background sync task."""

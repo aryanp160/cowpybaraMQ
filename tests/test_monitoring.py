@@ -13,15 +13,17 @@ async def test_monitoring_integration_full_flow(temp_broker_server):
     broker.group_manager.num_partitions = 3
     broker.storage.num_partitions = 3
 
-    # 1. Publish messages with keys to test partition routing
+    print("1. Publish messages with keys to test partition routing")
     await broker.publish("orders", {"item": "A"}, key="key1")
     await broker.publish("orders", {"item": "B"}, key="key2")
 
-    # 2. Status check on initial publishes
+    print("2. Status check on initial publishes")
     reader, writer = await asyncio.open_connection(host, port)
     writer.write(json.dumps({"action": "status"}).encode() + b"\n")
     await writer.drain()
+    print("waiting for resp 1")
     resp = await reader.readline()
+    print("got resp 1")
     writer.close()
     await writer.wait_closed()
 
@@ -32,7 +34,7 @@ async def test_monitoring_integration_full_flow(temp_broker_server):
     assert "orders" in stats["topics"]
     assert stats["topics"]["orders"] == 3
 
-    # 3. Connect active group consumer
+    print("3. Connect active group consumer")
     reader_c, writer_c = await asyncio.open_connection(host, port)
     req_c = (
         json.dumps(
@@ -48,14 +50,17 @@ async def test_monitoring_integration_full_flow(temp_broker_server):
     writer_c.write(req_c.encode())
     await writer_c.drain()
 
+    print("sleeping")
     # Allow time for registration and consumption
     await asyncio.sleep(0.1)
 
-    # 4. Status check with connected consumer and active assignments
+    print("4. Status check with connected consumer and active assignments")
     reader, writer = await asyncio.open_connection(host, port)
     writer.write(json.dumps({"action": "status"}).encode() + b"\n")
     await writer.drain()
+    print("waiting for resp 2")
     resp = await reader.readline()
+    print("got resp 2")
     writer.close()
     await writer.wait_closed()
 
@@ -65,6 +70,8 @@ async def test_monitoring_integration_full_flow(temp_broker_server):
     assert "analytics-group" in stats2["partition_ownership"]
     assert len(stats2["partition_ownership"]["analytics-group"]["orders"]["c-1"]) == 3
 
+    print("closing consumer")
     # Close consumer connection
     writer_c.close()
     await writer_c.wait_closed()
+    print("done")
