@@ -1,0 +1,4 @@
+{"offset": 0, "message": {"data": "msg1"}}
+{"offset": 1, "message": {"data": "msg2"}}
+{"offset": 10, "message": {"data": "msg3"}}
+{"offset": 3, "message": {"data": "msg4"}}

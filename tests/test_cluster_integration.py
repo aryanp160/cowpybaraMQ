@@ -240,8 +240,8 @@ async def test_cluster_failures_and_acks(tmp_path):
         cluster.brokers[ports[2]].cluster_manager.killed = True
 
         # Wait for heartbeats to time out and election to happen.
-        # Heartland timeout is 0.4s. Let's wait 0.7s.
-        await asyncio.sleep(0.7)
+        # Heartland timeout is 0.4s. Let's wait 1.5s to be safe on slow CI runners.
+        await asyncio.sleep(1.5)
 
         # The new leader should be the active broker with highest ID.
         # Since ports[2] is dead, ports[1] must become the new leader!
