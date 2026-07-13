@@ -61,7 +61,19 @@ async def temp_broker_server(tmp_log_dir):
     yield host, port, storage, broker, server
 
     # Teardown
-    await server.stop()
+    try:
+        await server.stop()
+    except Exception:
+        pass
+    try:
+        await broker.replication_manager.stop()
+    except Exception:
+        pass
+    try:
+        await broker.cluster_manager.stop()
+    except Exception:
+        pass
+
     server_task.cancel()
     try:
         await server_task

@@ -21,7 +21,7 @@ class GroupManager:
     ):
         self.filepath = Path(filepath)
         self.num_partitions = num_partitions
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # group_id -> topic -> partition_id -> offset
         self.offsets: Dict[str, Dict[str, Dict[str, int]]] = {}

@@ -135,7 +135,10 @@ class HeartbeatService:
                             writer.write(line)
                             await writer.drain()
                             writer.close()
-                            await writer.wait_closed()
+                            try:
+                                await asyncio.wait_for(writer.wait_closed(), timeout=0.1)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
                 else:
@@ -184,7 +187,10 @@ class ElectionManager:
                         return res
                     finally:
                         w.close()
-                        await w.wait_closed()
+                        try:
+                            await asyncio.wait_for(w.wait_closed(), timeout=0.1)
+                        except Exception:
+                            pass
 
                 resp = await asyncio.wait_for(_send_and_read(), timeout=0.3)
                 if resp:

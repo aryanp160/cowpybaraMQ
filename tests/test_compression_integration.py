@@ -39,7 +39,7 @@ async def test_compression_integration(temp_broker_server):
     resp_c = await reader_c.readline()
     resp_c_data = json.loads(resp_c.decode().strip())
     assert resp_c_data["status"] == "ok"
-    assert resp_c_data["payload"] == large_payload  # Decompressed!
+    assert resp_c_data["message"] == large_payload  # Decompressed!
     writer_c.close()
     await writer_c.wait_closed()
 
