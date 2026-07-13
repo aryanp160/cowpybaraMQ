@@ -240,12 +240,15 @@ async def test_cluster_failures_and_acks(tmp_path):
         cluster.brokers[ports[2]].cluster_manager.killed = True
 
         # Wait for heartbeats to time out and election to happen.
-        # Heartland timeout is 0.4s. Let's wait 1.5s to be safe on slow CI runners.
-        await asyncio.sleep(1.5)
+        # Poll until a new leader is elected or timeout
+        for _ in range(50):
+            if cluster.brokers[ports[1]].replication_manager.role == "leader":
+                break
+            await asyncio.sleep(0.1)
 
         # The new leader should be the active broker with highest ID.
         # Since ports[2] is dead, ports[1] must become the new leader!
-        assert cluster.brokers[ports[1]].replication_manager.role == "leader"
+        assert cluster.brokers[ports[1]].replication_manager.role == "leader", f"Leader election failed. ports[1] role: {cluster.brokers[ports[1]].replication_manager.role}"
 
         # Verify new leader accepts Produce requests
         reader, writer = await asyncio.open_connection("127.0.0.1", ports[1])
