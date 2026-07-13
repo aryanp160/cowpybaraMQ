@@ -136,7 +136,9 @@ class HeartbeatService:
                             await writer.drain()
                             writer.close()
                             try:
-                                await asyncio.wait_for(writer.wait_closed(), timeout=0.1)
+                                await asyncio.wait_for(
+                                    writer.wait_closed(), timeout=0.1
+                                )
                             except Exception:
                                 pass
                         except Exception:
