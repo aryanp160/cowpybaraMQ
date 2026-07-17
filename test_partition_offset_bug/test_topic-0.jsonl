@@ -2,3 +2,11 @@
 {"offset": 1, "message": {"data": "msg2"}}
 {"offset": 10, "message": {"data": "msg3"}}
 {"offset": 3, "message": {"data": "msg4"}}
+{"offset": 4, "message": {"data": "msg1"}}
+{"offset": 5, "message": {"data": "msg2"}}
+{"offset": 10, "message": {"data": "msg3"}}
+{"offset": 7, "message": {"data": "msg4"}}
+{"offset": 8, "message": {"data": "msg1"}}
+{"offset": 9, "message": {"data": "msg2"}}
+{"offset": 10, "message": {"data": "msg3"}}
+{"offset": 11, "message": {"data": "msg4"}}

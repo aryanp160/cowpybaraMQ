@@ -70,10 +70,43 @@ async def main():
     )
     server = Server(args.host, args.port, broker)
 
+    shutdown_event = asyncio.Event()
+
+    def handle_signal(*args):
+        logging.info("Graceful shutdown signal received...")
+        shutdown_event.set()
+
     try:
-        await server.start()
+        import signal
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, handle_signal)
+            except NotImplementedError:
+                signal.signal(
+                    sig, lambda s, f: loop.call_soon_threadsafe(shutdown_event.set)
+                )
+    except Exception as e:
+        logging.warning(f"Could not register signal handlers: {e}")
+
+    server_task = asyncio.create_task(server.start())
+
+    try:
+        await asyncio.wait(
+            [server_task, shutdown_event.wait()], return_when=asyncio.FIRST_COMPLETED
+        )
     finally:
-        await broker.replication_manager.stop()
+        logging.info("Initiating broker shutdown...")
+        await broker.shutdown()
+        logging.info("Stopping server...")
+        await server.stop()
+        if not server_task.done():
+            server_task.cancel()
+            try:
+                await server_task
+            except asyncio.CancelledError:
+                pass
 
 
 if __name__ == "__main__":

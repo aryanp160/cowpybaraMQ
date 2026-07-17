@@ -24,6 +24,7 @@ class Server:
         self.port = port
         self.server = None
         self.broker = broker
+        self.active_writers = set()
 
     async def handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -31,6 +32,18 @@ class Server:
         if self.broker.cluster_manager.killed:
             writer.close()
             return
+        if self.broker.shutting_down:
+            try:
+                writer.write(
+                    format_response("error", message="Broker is shutting down")
+                )
+                await writer.drain()
+            except Exception:
+                pass
+            writer.close()
+            return
+
+        self.active_writers.add(writer)
 
         addr = writer.get_extra_info("peername")
         logger.info(f"Accepted connection from {addr}")
@@ -62,6 +75,13 @@ class Server:
 
                 try:
                     request = parse_request(decoded_line)
+
+                    if self.broker.shutting_down:
+                        writer.write(
+                            format_response("error", message="Broker is shutting down")
+                        )
+                        await writer.drain()
+                        continue
 
                     if isinstance(request, StatusRequest):
                         stats = self.broker.get_stats()
@@ -189,7 +209,10 @@ class Server:
 
                         # Wait for the client to disconnect (EOF)
                         while True:
-                            if self.broker.cluster_manager.killed:
+                            if (
+                                self.broker.cluster_manager.killed
+                                or self.broker.shutting_down
+                            ):
                                 break
                             try:
                                 eof_line = await asyncio.wait_for(
@@ -219,6 +242,7 @@ class Server:
         except Exception as e:
             logger.error(f"Error handling client {addr}: {e}")
         finally:
+            self.active_writers.discard(writer)
             if (
                 registered_follower_id
                 and self.broker.replication_manager.followers.get(
@@ -229,7 +253,10 @@ class Server:
                 del self.broker.replication_manager.followers[registered_follower_id]
             logger.info(f"Closing connection to {addr}")
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
 
     async def start(self):
         self.server = await asyncio.start_server(
@@ -242,6 +269,19 @@ class Server:
             await self.server.serve_forever()
 
     async def stop(self):
+        if self.active_writers:
+            logger.info(
+                f"Closing {len(self.active_writers)} active client connections..."
+            )
+            writers_to_close = list(self.active_writers)
+            for w in writers_to_close:
+                try:
+                    w.close()
+                except Exception:
+                    pass
+            self.active_writers.clear()
+            logger.info("All active client connections closed cleanly.")
+
         if self.server:
             self.server.close()
             await self.server.wait_closed()

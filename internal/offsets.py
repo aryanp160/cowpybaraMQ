@@ -47,3 +47,18 @@ class OffsetManager:
                 self.offsets[consumer_id] = {}
             self.offsets[consumer_id][topic] = offset
             self.save_unlocked()
+
+    def flush(self):
+        """Force write all consumer offsets to disk and call fsync."""
+        with self.lock:
+            self.save_unlocked()
+            try:
+                import os
+
+                fd = os.open(str(self.filepath), os.O_RDWR)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            except Exception:
+                pass

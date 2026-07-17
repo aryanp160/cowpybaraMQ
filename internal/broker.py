@@ -35,7 +35,7 @@ class Broker:
             self.storage.compression_threshold = compression_threshold
         self.offset_manager = offset_manager or OffsetManager()
         self.group_manager = group_manager or GroupManager()
-
+        self.shutting_down = False
         from internal.metrics import MetricsManager
 
         self.metrics = MetricsManager(self)
@@ -493,3 +493,49 @@ class Broker:
                 f"Error consuming partition {partition_id} "
                 f"for group {group_id}: {e}"
             )
+
+    async def shutdown(self):
+        """Idempotently shut down the broker and all its background systems."""
+        if hasattr(self, "shutting_down") and self.shutting_down:
+            logger.info("Broker already shutting down. Ignoring duplicate request.")
+            return
+
+        logger.info("Starting graceful shutdown sequence for Broker...")
+        self.shutting_down = True
+
+        # 1. Stop throughput tracking task
+        if self.throughput_task:
+            logger.info("Stopping throughput tracking task...")
+            self.throughput_task.cancel()
+            try:
+                await self.throughput_task
+            except asyncio.CancelledError:
+                pass
+            self.throughput_task = None
+
+        # 2. Stop Cluster Manager
+        if hasattr(self, "cluster_manager") and self.cluster_manager:
+            logger.info("Stopping Cluster Manager...")
+            await self.cluster_manager.stop()
+
+        # 3. Stop Replication Manager
+        if hasattr(self, "replication_manager") and self.replication_manager:
+            logger.info("Stopping Replication Manager...")
+            await self.replication_manager.stop()
+
+        # 4. Flush Storage to disk
+        if hasattr(self, "storage") and self.storage:
+            logger.info("Flushing pending partition writes to disk...")
+            self.storage.flush()
+
+        # 5. Flush Offset Manager to disk
+        if hasattr(self, "offset_manager") and self.offset_manager:
+            logger.info("Flushing consumer offsets to disk...")
+            self.offset_manager.flush()
+
+        # 6. Flush Group Manager to disk
+        if hasattr(self, "group_manager") and self.group_manager:
+            logger.info("Flushing consumer group offsets to disk...")
+            self.group_manager.flush()
+
+        logger.info("Broker graceful shutdown sequence completed.")

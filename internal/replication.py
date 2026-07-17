@@ -146,9 +146,8 @@ class ReplicationManager:
         await self.stop_follower_sync()
         # Close follower connections
         for writer in list(self.followers.values()):
-            writer.close()
             try:
-                await writer.wait_closed()
+                writer.close()
             except Exception:
                 pass
         self.followers.clear()

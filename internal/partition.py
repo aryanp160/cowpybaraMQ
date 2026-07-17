@@ -67,3 +67,16 @@ class Partition:
                         entry["message"] = decompress_payload(entry["message"])
                     messages.append(entry)
         return messages
+
+    def flush(self):
+        """Flush any pending OS buffers to disk."""
+        import os
+
+        try:
+            fd = os.open(str(self.file_path), os.O_RDWR | os.O_APPEND)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except Exception:
+            pass
