@@ -10,3 +10,9 @@
 {"offset": 9, "message": {"data": "msg2"}}
 {"offset": 10, "message": {"data": "msg3"}}
 {"offset": 11, "message": {"data": "msg4"}}
+{"offset": 12, "message": {"data": "msg1"}, "checksum": 3871502979}
+{"offset": 13, "message": {"data": "msg2"}, "checksum": 358588064}
+{"offset": 14, "message": {"data": "msg4"}, "checksum": 1415754978}
+{"offset": 15, "message": {"data": "msg1"}, "checksum": 2843993156}
+{"offset": 16, "message": {"data": "msg2"}, "checksum": 1747479269}
+{"offset": 17, "message": {"data": "msg4"}, "checksum": 2135942945}

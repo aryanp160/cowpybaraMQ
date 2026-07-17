@@ -20,10 +20,55 @@ class Partition:
         if not self.file_path.exists():
             self.file_path.touch()
 
-        # Determine the next offset by counting existing lines
+        import logging
+        import zlib
+
+        logger = logging.getLogger(__name__)
+
+        # Determine the next offset by validating each line
         with self.file_path.open("r", encoding="utf-8") as f:
-            for _ in f:
-                self.next_offset += 1
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if (
+                        not isinstance(entry, dict)
+                        or "offset" not in entry
+                        or "message" not in entry
+                    ):
+                        logger.warning(
+                            f"Corrupted record detected in {self.file_path} at line {line_num}: "
+                            f"missing offset/message fields."
+                        )
+                        continue
+
+                    if "checksum" in entry:
+                        checksum = entry["checksum"]
+                        expected_checksum = zlib.crc32(
+                            json.dumps(
+                                {
+                                    "offset": entry["offset"],
+                                    "message": entry["message"],
+                                },
+                                sort_keys=True,
+                            ).encode("utf-8")
+                        )
+                        if checksum != expected_checksum:
+                            logger.warning(
+                                f"Corrupted record detected in {self.file_path} at line {line_num}: "
+                                f"checksum mismatch (expected {expected_checksum}, got {checksum})."
+                            )
+                            continue
+
+                    self.next_offset = max(self.next_offset, entry["offset"] + 1)
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"Corrupted record detected in {self.file_path} at line {line_num}: "
+                        f"failed to parse JSON: {e}"
+                    )
+                    continue
 
     def append(
         self,
@@ -44,7 +89,14 @@ class Partition:
         from internal.compression import compress_payload
 
         compressed_msg, _ = compress_payload(message, codec, threshold)
-        entry = {"offset": offset, "message": compressed_msg}
+        import zlib
+
+        data_str = json.dumps(
+            {"offset": offset, "message": compressed_msg}, sort_keys=True
+        )
+        checksum = zlib.crc32(data_str.encode("utf-8"))
+
+        entry = {"offset": offset, "message": compressed_msg, "checksum": checksum}
 
         # Open in append mode ("a") to ensure we never overwrite logs
         with self.file_path.open("a", encoding="utf-8") as f:
@@ -56,16 +108,56 @@ class Partition:
     def read_all(self) -> List[Dict[str, Any]]:
         """Read all messages from the partition's JSONL file."""
         from internal.compression import decompress_payload
+        import logging
+        import zlib
+
+        logger = logging.getLogger(__name__)
 
         messages = []
         with self.file_path.open("r", encoding="utf-8") as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if line:
-                    entry = json.loads(line)
-                    if "message" in entry:
-                        entry["message"] = decompress_payload(entry["message"])
-                    messages.append(entry)
+                    try:
+                        entry = json.loads(line)
+                        if (
+                            not isinstance(entry, dict)
+                            or "offset" not in entry
+                            or "message" not in entry
+                        ):
+                            logger.warning(
+                                f"Skipping corrupted record in {self.file_path} at line {line_num}: "
+                                f"missing offset/message fields."
+                            )
+                            continue
+
+                        if "checksum" in entry:
+                            checksum = entry["checksum"]
+                            expected_checksum = zlib.crc32(
+                                json.dumps(
+                                    {
+                                        "offset": entry["offset"],
+                                        "message": entry["message"],
+                                    },
+                                    sort_keys=True,
+                                ).encode("utf-8")
+                            )
+                            if checksum != expected_checksum:
+                                logger.warning(
+                                    f"Skipping corrupted record in {self.file_path} at line {line_num}: "
+                                    f"checksum mismatch."
+                                )
+                                continue
+
+                        if "message" in entry:
+                            entry["message"] = decompress_payload(entry["message"])
+                        messages.append(entry)
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"Skipping corrupted record in {self.file_path} at line {line_num}: "
+                            f"failed to parse JSON: {e}"
+                        )
+                        continue
         return messages
 
     def flush(self):
