@@ -1,12 +1,12 @@
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
+
+from internal.broker import Broker
 from internal.networking import Server
 from internal.storage import Storage
-from internal.broker import Broker
-
-import os
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

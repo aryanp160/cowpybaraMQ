@@ -1,14 +1,15 @@
 import asyncio
 import logging
 import socket
+
 import pytest
 import pytest_asyncio
 
-from internal.storage import Storage
 from internal.broker import Broker
+from internal.groups import GroupManager
 from internal.networking import Server
 from internal.offsets import OffsetManager
-from internal.groups import GroupManager
+from internal.storage import Storage
 
 # Suppress noisy logging during tests unless specifically requested
 logging.getLogger("internal").setLevel(logging.WARNING)

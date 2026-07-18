@@ -1,6 +1,6 @@
+import argparse
 import asyncio
 import json
-import argparse
 
 
 async def consume(

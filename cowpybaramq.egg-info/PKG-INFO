@@ -1,0 +1,561 @@
+Metadata-Version: 2.4
+Name: cowpybaramq
+Version: 0.1.0
+Summary: A distributed log-based message broker
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# CowpybaraMQ
+
+A distributed log-based message broker inspired by Apache Kafka, built in Python to explore distributed systems, replication, partitions, consumer groups, and fault tolerance.
+
+---
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Version](https://img.shields.io/badge/version-v3.0.0-blueviolet?style=flat-square)](https://github.com/aryanp160/cowpybaraMQ)
+[![Build Status](https://github.com/aryanp160/cowpybaraMQ/actions/workflows/ci.yml/badge.svg?branch=main&style=flat-square)](https://github.com/aryanp160/cowpybaraMQ/actions)
+[![Last Commit](https://img.shields.io/github/last-commit/aryanp160/cowpybaraMQ?style=flat-square)](https://github.com/aryanp160/cowpybaraMQ/commits/main)
+
+---
+
+## Table of Contents
+- [Project Overview](#project-overview)
+- [Feature Matrix](#feature-matrix)
+- [System Architecture](#system-architecture)
+- [Sequence Diagrams](#sequence-diagrams)
+- [Failure Scenarios](#failure-scenarios)
+- [Benchmarks](#benchmarks)
+- [Screenshots & Demo](#screenshots--demo)
+- [Project Structure](#project-structure)
+- [Configuration Reference](#configuration-reference)
+- [Protocol Specification](#protocol-specification)
+- [Design Decisions](#design-decisions)
+- [Comparison Matrix](#comparison-matrix)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [Testing Guide](#testing-guide)
+- [License](#license)
+
+---
+
+## Project Overview
+
+### Why CowpybaraMQ Exists
+CowpybaraMQ was built as an educational tool to demystify the inner workings of modern distributed log-based event systems like Apache Kafka. It showcases how to handle concurrent connections over TCP, maintain strict ordering constraints across partitions, load balance dynamic consumer groups, and coordinate failover replication without relying on external heavy-weight frameworks.
+
+### What Problems Message Brokers Solve
+In microservice architectures, systems need to communicate reliably without direct, synchronous HTTP/gRPC coupling. Message brokers act as intermediate coordinators, enabling:
+- **Asynchronous Communication**: Services publish events and proceed without blocking on consumer processing.
+- **Backpressure Management**: Slow consumers can read messages at their own pace without exhausting system resources.
+- **Fault Isolation**: If a consumer service goes down, messages are queued or persisted in the broker until it recovers.
+
+### Queue Systems vs. Log-Based Brokers
+Traditional queues (e.g., RabbitMQ) delete messages immediately after consumer acknowledgment, supporting transient queues. 
+
+Log-based brokers (e.g., Apache Kafka, CowpybaraMQ) treat topics as ordered, append-only commit logs on disk. Messages persist regardless of consumption status, allowing multiple independent consumer groups to replay history from arbitrary offsets.
+
+### CowpybaraMQ vs. Apache Kafka
+While Kafka utilizes ZooKeeper/KRaft, complex JVM memory tuning, and custom page caches, CowpybaraMQ is designed for educational accessibility:
+- **Simplicity**: Written in lightweight async Python.
+- **Accessibility**: Zero external infrastructure dependencies (e.g. no JVM, no external database).
+- **Core Concepts**: Implements partitions, thread-safe persistent offsets, leader election, and multi-node TCP replication.
+
+---
+
+## Feature Matrix
+
+| Feature | Description | Status |
+| :--- | :--- | :---: |
+| **TCP Broker** | Lightweight asynchronous TCP socket server handling concurrent clients. | **Supported** |
+| **Persistent Logs** | Append-only partition storage on disk using JSONL formatting. | **Supported** |
+| **Topics & Partitions** | Topic segment partitioning with key-based CRC32 routing. | **Supported** |
+| **Consumer Groups** | Dynamic partition load-balancing using Round-Robin rebalances. | **Supported** |
+| **Committed Offsets** | Thread-safe offset tracking persisting to local storage files. | **Supported** |
+| **Replication** | Asynchronous TCP log replication from Leaders to Followers. | **Supported** |
+| **Leader Election** | Bully-style automatic election selecting active broker with highest ID. | **Supported** |
+| **ACK Modes** | Customizable produce write safety (`acks=0`, `acks=1`, `acks=all`). | **Supported** |
+| **Simulation Utility** | CLI suite to inject broker failures, disconnections, and recoveries. | **Supported** |
+
+---
+
+## System Architecture
+
+### 1. Overall Cluster Topology
+Shows the multi-broker network routing traffic from producers and coordinating replication.
+
+```mermaid
+graph TD
+    subgraph Producers & Consumers
+        Producer[Producers] -->|PRODUCE| Leader[Leader Broker 9094]
+        Consumer[Consumer Groups] -->|CONSUME| Leader
+    end
+    
+    subgraph Cluster Topology
+        Leader -->|Asynchronous Replication| FollowerA[Follower Broker 9093]
+        Leader -->|Asynchronous Replication| FollowerB[Follower Broker 9092]
+    end
+```
+
+### 2. Broker Components Internals
+Visualizes the internal modules handling socket lines and disk writes.
+
+```mermaid
+graph LR
+    Server[networking.Server] -->|Parse Request| Protocol[protocol.Parser]
+    Protocol -->|Route Action| Broker[broker.Broker]
+    
+    subgraph Broker Core
+        Broker -->|Publish / Read| Storage[storage.Storage]
+        Broker -->|Commit / Load| Offsets[offsets.OffsetManager]
+        Broker -->|Heartbeats & Election| Cluster[cluster.ClusterManager]
+        Broker -->|Broadcasts| Replication[replication.ReplicationManager]
+    end
+```
+
+### 3. Storage Layer Architecture
+How partitioned JSONL logs map to segments on the local filesystem.
+
+```mermaid
+graph TD
+    subgraph Storage Directory
+        Topic[logs-9092 / topic-name] --> Part0[topic-name-0.jsonl]
+        Topic --> Part1[topic-name-1.jsonl]
+        Topic --> Part2[topic-name-2.jsonl]
+    end
+```
+
+---
+
+## Sequence Diagrams
+
+### 1. Producer → Broker (ACKS=all)
+Shows replication confirmation from followers before leader responds.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Producer
+    participant Leader
+    participant Follower
+    
+    Producer->>Leader: PRODUCE (topic, payload, acks=all)
+    Leader->>Leader: Write to local log
+    Leader->>Follower: ReplicateRequest (payload, offset)
+    Follower->>Follower: Write to local log
+    Follower-->>Leader: ReplicateAckRequest
+    Leader-->>Producer: Return OK (partition, offset)
+```
+
+### 2. Heartbeat & Leader Election
+Shows election trigger on heartbeat loss.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Follower 9093
+    participant Follower 9094 (Candidate)
+    
+    Note over Follower 9093, Follower 9094: HeartbeatTimeout elapsed
+    Follower 9094->>Follower 9094: Trigger election
+    Follower 9094->>Follower 9093: ElectRequest (candidate_id=9094)
+    Follower 9093-->>Follower 9094: OK (broker_id=9093)
+    Note over Follower 9094: 9094 is highest active broker. Promotes to LEADER.
+```
+
+### 3. Consumer Group Join & Partition Rebalance
+Dynamic assignment of partitions on consumer register.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Consumer1
+    actor Consumer2
+    participant Broker
+    participant GroupManager
+    
+    Consumer1->>Broker: JOIN group-a
+    Broker->>GroupManager: Register Consumer1
+    GroupManager->>Broker: Assign Partitions [0, 1, 2] to Consumer1
+    
+    Consumer2->>Broker: JOIN group-a
+    Broker->>GroupManager: Rebalance group-a
+    GroupManager->>Broker: Assign Partitions [0, 1] to Consumer1, [2] to Consumer2
+    Broker->>Consumer1: Rebalance Notification
+    Broker->>Consumer2: Rebalance Notification
+```
+
+---
+
+## Failure Scenarios
+
+### Leader Crashes
+- **Problem**: The primary broker serving writes crashes.
+- **Detection**: Followers miss periodic heartbeats exceeding `HEARTBEAT_TIMEOUT`.
+- **Recovery**: Active followers broadcast `ElectRequest`. The active broker with the highest `broker_id` promotes itself to Leader.
+- **Expected Behaviour**: Client producers receive connection errors, reconnect to the new leader, and resume publishing. Standalone and group consumers reconnect and resume fetching.
+
+### Follower Crashes
+- **Problem**: A replica broker crashes.
+- **Detection**: The Leader detects socket disconnects and drops the follower writer from the replication pool.
+- **Recovery**: Upon restart, the recovered follower registers via `RegisterFollowerRequest` sending its current partition offsets.
+- **Expected Behaviour**: The leader streams missing historical logs to catch the follower up.
+
+### Offset Corruption
+- **Problem**: The offset tracking JSON file becomes corrupted.
+- **Detection**: JSON parsing error on startup.
+- **Recovery**: Corrupted offset entries are skipped, resetting the affected consumer group offset to `0` (or end of log).
+- **Expected Behaviour**: Consumer group replays partition logs from the beginning.
+
+---
+## Benchmarks & Performance
+
+CowpybaraMQ includes an automated benchmarking suite located in `cmd/benchmark.py` capable of measuring system performance under various load sizes, configurations, and network settings.
+
+### Running Benchmarks
+Execute the benchmarking engine across multiple message batch sizes (`1,000` to `100,000` messages) with and without `gzip` compression:
+```bash
+python cmd/benchmark.py --counts "1,000,10,000,50,000,100,000"
+```
+
+### Metrics Collected
+- **Throughput**: Message processing rate (messages/sec) and raw network transfer volume (bytes/sec).
+- **Latency**: Mean, p95, and p99 request-response latencies (ms) for both PRODUCE and CONSUME operations.
+- **Resource Footprint**: Host CPU utilization (%) and active Memory RSS footprint (MB) of the broker process.
+- **Replication Overhead**: Replication delays between leader and follower nodes.
+
+### Benchmark Comparison Table (Example Local Run)
+
+| Messages | Compression | Operation | Throughput (msgs/s) | Throughput (bytes/s) | Avg Latency (ms) | P95 Lat (ms) | P99 Lat (ms) | Comp Ratio | CPU (%) | Memory (MB) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **10,000** | `none` | PRODUCE | 1,220.5 msgs/s | 512.4 KB/s | 0.81 ms | 3.50 ms | 6.20 ms | 1.00x | 12.4% | 14.5 MB |
+| **10,000** | `none` | CONSUME | 6,800.1 msgs/s | 2.8 MB/s | 0.15 ms | 1.20 ms | 4.80 ms | N/A | 8.2% | 14.8 MB |
+| **10,000** | `gzip` | PRODUCE | 1,050.2 msgs/s | 130.1 KB/s | 0.95 ms | 4.10 ms | 7.90 ms | 3.46x | 18.5% | 15.1 MB |
+| **10,000** | `gzip` | CONSUME | 4,200.4 msgs/s | 550.2 KB/s | 0.23 ms | 2.00 ms | 9.20 ms | N/A | 11.1% | 15.6 MB |
+
+*Note: Payloads consist of a structured JSON body with repeated text patterns to demonstrate real-world log compression ratios.*
+
+### Benchmark Outputs
+1. **Terminal Console Summary**: Formatted tabular console matrix.
+2. **Markdown Report (`benchmark_report.md`)**: A generated analytical report detailing environment statistics, resource tables, and replication efficiency.
+3. **CSV Export (`benchmark_results.csv`)**: Raw metrics suitable for importing into charting or data analysis platforms.
+
+---
+
+## Message Compression Architecture
+
+CowpybaraMQ implements a transparent pluggable message compression layer. Payloads published to topics can be compressed prior to persistence on disk to reduce disk I/O usage and network replication volume.
+
+### Compression Pipeline Flow
+
+```mermaid
+graph TD
+    Msg[Raw Payload] --> Check{Size > Threshold?}
+    Check -->|Yes| Compress[gzip Compression]
+    Compress --> Base64[Base64 Encoding]
+    Base64 --> Wrap[Wrap with Compression Metadata]
+    Wrap --> Append[Append to Partition Disk Log]
+    Check -->|No| Append
+```
+
+### Decompression Pipeline Flow
+```mermaid
+graph TD
+    Read[Read Log Entry] --> Detect{Is Compressed?}
+    Detect -->|Yes| Base64Decode[Base64 Decode]
+    Base64Decode --> Decompress[gzip Decompress]
+    Decompress --> Parse[Parse JSON Payload]
+    Detect -->|No| Parse
+    Parse --> Return[Return to Consumer]
+```
+
+### Storage Payload Layout Examples
+- **Uncompressed Payload (< Threshold)**:
+  ```json
+  {"offset": 105, "message": {"order_id": 9942, "user_id": "cust_88"}}
+  ```
+- **Compressed Payload (> Threshold)**:
+  ```json
+  {
+    "offset": 106,
+    "message": {
+      "_compressed_payload": "H4sICD5+...",
+      "_compression": "gzip"
+    }
+  }
+  ```
+
+---
+
+## Internal Metrics Subsystem
+
+CowpybaraMQ features an integrated, real-time metrics collection subsystem coordinated by `MetricsManager` in `internal/metrics.py`.
+
+### Metrics Flow Architecture
+
+```mermaid
+graph TD
+    Client[Producers/Consumers] -->|Network Actions| Server[networking.py]
+    Server -->|Record Metrics| Manager[MetricsManager]
+    
+    subgraph Tracked Metrics
+        Manager -->|Throughput| MsgSec[Throughput msgs/sec]
+        Manager -->|Throughput| BytesSec[Throughput bytes/sec]
+        Manager -->|Latency| AvgLat[Avg Latency ms]
+        Manager -->|Storage| DiskUse[Disk Usage bytes]
+        Manager -->|Consumers| Lag[Consumer Group Lag]
+    end
+    
+    Admin[Admin Status / Dashboard] -->|Request Snapshot| Manager
+```
+
+### Programmatic Usage
+```python
+from internal.metrics import MetricsManager
+
+# Initialize metrics manager linked to a broker
+metrics = MetricsManager(broker)
+
+# Get metrics snapshot as a python dict
+snapshot = metrics.snapshot()
+
+# Print pretty formatted metrics report to console
+print(metrics.pretty_print())
+```
+
+---
+
+## Terminal Dashboard
+
+CowpybaraMQ includes an auto-refreshing terminal dashboard powered by `Rich`.
+
+### Dashboard Architecture
+
+```mermaid
+graph TD
+    Dash[cmd/dashboard.py] -->|Query status every 1s| Nodes[Cluster Brokers]
+    Nodes -->|Return stats + metrics payload| Dash
+    Dash -->|Parse & Aggregate| Render[Rich Terminal Layout]
+    Render -->|Render Layout| Console[Console UI]
+```
+
+Launch the dashboard:
+```bash
+python cmd/dashboard.py
+```
+
+### Visual Interface Overview
+
+```text
+===========================================================================
+                     COWPYBARAMQ STATUS OVERVIEW
+===========================================================================
+Leader Address: 127.0.0.1:9094 | Cluster Health: 100% | Active: 3/3 | Uptime: 45m 12s
+===========================================================================
+
+ [Cluster Topology]                       [Topics Overview]
+ ┌──────────────────────────────────────┐ ┌───────────────────────────────┐
+ │ Broker ID │ Status │ Role   │ Parts  │ │ Topic Name   │ Parts │ Total  │
+ ├───────────┼────────┼────────┼────────┤ ├──────────────┼───────┼────────┤
+ │ 9092      │ ALIVE  │ follower│ 3     │ │ orders       │ 3     │ 10,500 │
+ │ 9093      │ ALIVE  │ follower│ 3     │ │ payments     │ 3     │ 5,200  │
+ │ 9094      │ ALIVE  │ leader  │ 3     │ └──────────────┴───────┴────────┘
+ └───────────┴────────┴────────┴────────┘
+ [Fault & Failure Log]                    [Consumers Overview]
+ ┌──────────────────────────────────────┐ ┌───────────────────────────────┐
+ │ Dead Nodes: None                     │ │ Group ID     │ Active│ Lag    │
+ │ Unreachable: None                    │ ├──────────────┼───────┼────────┤
+ │ Elections: 0  | Leader Changes: 0    │ │ order-proc   │ 2     │ 12 msgs│
+ └──────────────────────────────────────┘ └──────────────┴───────┴────────┘
+
+ [Performance & Metrics]                  [Storage & Log Allocation]
+ ┌──────────────────────────────────────┐ ┌───────────────────────────────┐
+ │ Throughput: 1,220.5 msgs/sec         │ │ Total Log Size: 12.4 MB       │
+ │ Net Transfer: 512.4 KB/sec           │ │ Total Disk: 12.8 MB           │
+ │ Produce Latency: 0.81 ms             │ │   orders-0: █████░░░ (3.2 MB) │
+ │ Consume Latency: 0.15 ms             │ │   orders-1: ████░░░░ (2.8 MB) │
+ │ Compression Ratio: 3.46x             │ │   orders-2: █████░░░ (3.4 MB) │
+ └──────────────────────────────────────┘ └───────────────────────────────┘
+```
+
+---
+
+## Configuration Reference
+
+The broker reads settings from environment variables or command-line arguments:
+
+| Argument | Env Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--port` | `COWPYBARA_PORT` | `9092` | TCP Server listening port |
+| `--role` | `COWPYBARA_ROLE` | `leader` | Node role (`leader` or `follower`) |
+| `--leader-host` | `COWPYBARA_LEADER_HOST` | `127.0.0.1` | Leader host address followers connect to |
+| `--leader-port` | `COWPYBARA_LEADER_PORT` | `9092` | Leader port followers connect to |
+| `--broker-id` | `COWPYBARA_BROKER_ID` | `PORT` | Unique identifier for cluster coordination |
+| `--cluster-members` | `COWPYBARA_CLUSTER_MEMBERS` | `127.0.0.1:9092...` | Comma-separated list of active cluster hosts |
+| `--compression-type` | `COWPYBARA_COMPRESSION_TYPE` | `none` | Message compression codec (`none`, `gzip`) |
+| `--compression-threshold`| `COWPYBARA_COMPRESSION_THRESHOLD` | `512` | Minimum payload size in bytes to trigger compression |
+
+### Configuration Examples
+
+#### 1. Single Broker (No Replication, Gzip Active)
+```bash
+python cmd/broker.py --port 9092 --compression-type gzip --compression-threshold 256
+```
+
+#### 2. Local 3-Node Cluster Setup
+- **Broker 1 (Leader/9092)**:
+  ```bash
+  python cmd/broker.py --port 9092 --role leader --broker-id 9092 --cluster-members "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094"
+  ```
+- **Broker 2 (Follower/9093)**:
+  ```bash
+  python cmd/broker.py --port 9093 --role follower --broker-id 9093 --leader-port 9092 --cluster-members "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094"
+  ```
+- **Broker 3 (Follower/9094)**:
+  ```bash
+  python cmd/broker.py --port 9094 --role follower --broker-id 9094 --leader-port 9092 --cluster-members "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094"
+  ```
+
+---
+
+## Troubleshooting Section
+
+### 1. Unreachable Node Status in Dashboard
+- **Symptoms**: Node status shows `UNREACHABLE` or `DEAD` on the terminal dashboard.
+- **Cause**: Network disconnection, port binding conflicts, or the broker process terminated unexpectedly.
+- **Resolution**:
+  - Verify that the process is active by running `ps aux | grep broker.py` (Linux) or checking Task Manager (Windows).
+  - Check that other services are not using the target port.
+  - Review cluster members configurations (`--cluster-members`) to verify IP/port consistency.
+
+### 2. Consumer Lag Increasing Continuously
+- **Symptoms**: Dashboard displays growing consumer group lag.
+- **Cause**: The consumer processing logic is slower than the producer publish rate (resource bottleneck), or a rebalance failed.
+- **Resolution**:
+  - Launch additional consumer instances within the same consumer group ID to automatically rebalance partition ownership.
+  - Optimize the consumer read logic or verify consumer log directories.
+
+### 3. Bully Election Hangs or Split-Brain Occurs
+- **Symptoms**: Multiple brokers claim to be `leader` or heartbeat logs show election timeouts constantly.
+- **Cause**: Port blocking or firewall configurations preventing inter-broker socket communications.
+- **Resolution**:
+  - Verify that internal cluster communication ports are unblocked.
+  - Ensure all brokers share the exact same `--cluster-members` parameter on startup.
+
+---
+
+## Protocol Specification
+
+All socket communication packets are **newline-delimited JSON strings** over raw TCP.
+
+### 1. PRODUCE Request
+```json
+{"action": "produce", "topic": "orders", "payload": {"val": 42}, "key": "user_1", "acks": "all"}
+```
+### 2. PRODUCE Response
+```json
+{"status": "ok", "partition": 0, "offset": 12}
+```
+### 3. CONSUME Request
+```json
+{"action": "consume", "topic": "orders", "offset": 0}
+```
+### 4. Heartbeat Frame
+```json
+{"action": "heartbeat", "sender_id": "9092", "role": "leader"}
+```
+
+---
+
+## Design Decisions
+
+### Append-Only JSONL Logs
+- **Decision**: Persist partition logs in JSON Lines format (`.jsonl`).
+- **Trade-off**: Simple to read, debug, and parse sequentially. However, it consumes more disk space compared to raw binary logs (like Kafka Index files).
+
+### Asynchronous Heartbeats
+- **Decision**: Exchange heartbeats asynchronously outside the storage write path.
+- **Trade-off**: Keeps latency of producing messages low, but can result in transient split-brain if network isolation occurs before election checks complete.
+
+---
+
+## Project Structure
+
+```text
+cowpybaraMQ/
+├── cmd/
+│   ├── broker.py          # Broker server entry point
+│   ├── producer.py        # Produce command utility
+│   ├── consumer.py        # Consumer subscription tool
+│   ├── status.py          # Diagnostics tool
+│   ├── benchmark.py       # Cluster benchmarking engine
+│   ├── dashboard.py       # Auto-refreshing terminal dashboard
+│   └── cluster_admin.py   # Simulates cluster failover states
+├── internal/
+│   ├── broker.py          # Coordinates message flow, loops and metrics
+│   ├── cluster.py         # ClusterManager, heartbeat tracking, elections
+│   ├── config.py          # Environment settings loader
+│   ├── compression.py     # Pluggable compression & decompression layer
+│   ├── groups.py          # Consumer group partition assignment coordinator
+│   ├── metrics.py         # Metrics subsystem recording and pretty-print
+│   ├── networking.py      # TCP server socket management loops
+│   ├── offsets.py         # Persistent commit offset file managers
+│   ├── partition.py       # JSONL partition file readers and writers
+│   ├── protocol.py        # Network line parser and protocol dataclasses
+│   ├── replication.py     # Asymmetric peer-to-peer sync engine
+│   └── storage.py         # Topics directory layout mapper
+└── tests/                 # Integration, stress, and unit testing scripts
+```
+
+---
+
+## Comparison Matrix
+
+| Feature | CowpybaraMQ | Apache Kafka | RabbitMQ | NATS |
+| :--- | :---: | :---: | :---: | :---: |
+| **Log-Based** | Yes | Yes | No (Queue) | No (Queue/JetStream)|
+| **Ordering** | Partition | Partition | Queue | Stream |
+| **Broker Replication**| Yes | Yes | Yes | Yes |
+| **Dependencies** | None | KRaft/ZooKeeper| Erlang VM | Go Runtime |
+
+---
+
+## Roadmap
+
+- [ ] **Consensus Protocol**: Migrate simplified Bully election to full Raft Consensus.
+- [ ] **Zero-Copy Performance**: Integrate binary memory buffers to bypass JSON parser loops.
+- [ ] **SSL/TLS**: Implement encrypted secure TCP transmission.
+- [ ] **Tiered Storage**: Automatically compress and archive cold logs to S3.
+
+---
+
+## Contributing
+
+We welcome contributions! Please follow these standards:
+- **Code Style**: Ensure python files conform to `black` formatting standards.
+- **Linter**: Verify no errors are reported by `flake8 .`.
+- **Tests**: All tests in `tests/` must pass cleanly.
+
+---
+
+## Testing Guide
+
+Cowpybara contains a comprehensive testing suite under `tests/`:
+- **`test_broker.py`**: Validates basic JSON parser logic and socket connections.
+- **`test_cluster_integration.py`**: Verifies dynamic failovers, crash simulation, disconnects, and ACK modes (`acks=0/1/all`).
+- **`test_replication.py`**: Checks replication logs duplication guard.
+- **`test_compression.py`**: Validates transparent gzip compression.
+- **`test_metrics.py`**: Validates the MetricsManager subsystem.
+
+Run the test suite locally:
+```bash
+pytest
+```
+
+---
+
+## License
+
+This project is licensed under the terms of the MIT License. See [LICENSE](LICENSE) for details.

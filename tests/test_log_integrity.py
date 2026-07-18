@@ -1,6 +1,7 @@
 import json
-import zlib
 import logging
+import zlib
+
 from internal.partition import Partition
 
 

@@ -1,19 +1,20 @@
 import asyncio
 import logging
-from internal.protocol import (
-    parse_request,
-    format_response,
-    ProduceRequest,
-    ConsumeRequest,
-    StatusRequest,
-    RegisterFollowerRequest,
-    HeartbeatRequest,
-    ReplicateAckRequest,
-    ElectRequest,
-    ClusterStatusRequest,
-    SimulateFailureRequest,
-)
+
 from internal.broker import Broker
+from internal.protocol import (
+    ClusterStatusRequest,
+    ConsumeRequest,
+    ElectRequest,
+    HeartbeatRequest,
+    ProduceRequest,
+    RegisterFollowerRequest,
+    ReplicateAckRequest,
+    SimulateFailureRequest,
+    StatusRequest,
+    format_response,
+    parse_request,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,8 @@
-import pytest
-import json
 import asyncio
+import json
+
+import pytest
+
 from internal.groups import GroupManager, TopicPartition
 
 

@@ -2,7 +2,8 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from internal.config import NUM_PARTITIONS, COMPRESSION_TYPE, COMPRESSION_THRESHOLD
+
+from internal.config import COMPRESSION_THRESHOLD, COMPRESSION_TYPE, NUM_PARTITIONS
 from internal.partition import Partition
 
 

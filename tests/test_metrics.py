@@ -1,4 +1,5 @@
 import pytest
+
 from internal.metrics import MetricsManager
 from internal.storage import Storage
 

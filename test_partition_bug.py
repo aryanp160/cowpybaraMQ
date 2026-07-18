@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from internal.partition import Partition
 
 log_dir = Path("test_partition_offset_bug")
