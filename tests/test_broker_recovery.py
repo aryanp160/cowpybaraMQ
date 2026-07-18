@@ -4,7 +4,6 @@ import socket
 import pytest
 from internal.storage import Storage
 from internal.offsets import OffsetManager
-from internal.groups import GroupManager
 from internal.broker import Broker
 from internal.networking import Server
 
