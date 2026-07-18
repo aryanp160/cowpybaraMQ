@@ -1,9 +1,26 @@
 version: '3.8'
 
 services:
-  broker:
+  broker-1:
     build: .
+    command: python cmd/broker.py --port 9092 --role leader --broker-id 9092 --cluster-members "broker-1:9092,broker-2:9093,broker-3:9094" --heartbeat-interval 0.1 --heartbeat-timeout 0.3
     ports:
       - "9092:9092"
     volumes:
-      - ./logs:/app/logs
+      - ./logs-9092:/app/logs-9092
+
+  broker-2:
+    build: .
+    command: python cmd/broker.py --port 9093 --role follower --broker-id 9093 --leader-host broker-1 --leader-port 9092 --cluster-members "broker-1:9092,broker-2:9093,broker-3:9094" --heartbeat-interval 0.1 --heartbeat-timeout 0.3
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./logs-9093:/app/logs-9093
+
+  broker-3:
+    build: .
+    command: python cmd/broker.py --port 9094 --role follower --broker-id 9094 --leader-host broker-1 --leader-port 9092 --cluster-members "broker-1:9092,broker-2:9093,broker-3:9094" --heartbeat-interval 0.1 --heartbeat-timeout 0.3
+    ports:
+      - "9094:9094"
+    volumes:
+      - ./logs-9094:/app/logs-9094

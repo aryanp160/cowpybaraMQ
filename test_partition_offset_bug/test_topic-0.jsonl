@@ -34,3 +34,6 @@
 {"offset": 33, "message": {"data": "msg1"}, "checksum": 4233992108}
 {"offset": 34, "message": {"data": "msg2"}, "checksum": 1503321097}
 {"offset": 35, "message": {"data": "msg4"}, "checksum": 1325224397}
+{"offset": 36, "message": {"data": "msg1"}, "checksum": 2167038953}
+{"offset": 37, "message": {"data": "msg2"}, "checksum": 1924632522}
+{"offset": 38, "message": {"data": "msg4"}, "checksum": 4216532864}
