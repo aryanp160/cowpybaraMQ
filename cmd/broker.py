@@ -4,10 +4,6 @@ import logging
 import os
 from pathlib import Path
 
-from internal.broker import Broker
-from internal.networking import Server
-from internal.storage import Storage
-
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -46,8 +42,23 @@ async def main():
         help="Compression threshold size in bytes",
     )
 
+    parser.add_argument(
+        "--heartbeat-interval",
+        type=float,
+        default=None,
+        help="Heartbeat interval in seconds",
+    )
+    parser.add_argument(
+        "--heartbeat-timeout",
+        type=float,
+        default=None,
+        help="Heartbeat timeout in seconds",
+    )
+
     args = parser.parse_args()
 
+    if args.port is not None:
+        os.environ["COWPYBARA_PORT"] = str(args.port)
     if args.broker_id is not None:
         os.environ["COWPYBARA_BROKER_ID"] = str(args.broker_id)
     if args.cluster_members is not None:
@@ -56,6 +67,10 @@ async def main():
         os.environ["COWPYBARA_COMPRESSION_TYPE"] = args.compression_type
     if args.compression_threshold is not None:
         os.environ["COWPYBARA_COMPRESSION_THRESHOLD"] = str(args.compression_threshold)
+
+    from internal.broker import Broker
+    from internal.networking import Server
+    from internal.storage import Storage
 
     log_dir = Path(f"./logs-{args.port}")
 
@@ -67,6 +82,8 @@ async def main():
         leader_port=args.leader_port,
         compression_type=args.compression_type,
         compression_threshold=args.compression_threshold,
+        heartbeat_interval=args.heartbeat_interval,
+        heartbeat_timeout=args.heartbeat_timeout,
     )
     server = Server(args.host, args.port, broker)
 
@@ -93,8 +110,9 @@ async def main():
     server_task = asyncio.create_task(server.start())
 
     try:
+        shutdown_task = asyncio.create_task(shutdown_event.wait())
         await asyncio.wait(
-            [server_task, shutdown_event.wait()], return_when=asyncio.FIRST_COMPLETED
+            [server_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
         )
     finally:
         logging.info("Initiating broker shutdown...")

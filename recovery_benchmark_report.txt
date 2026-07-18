@@ -1,27 +1,27 @@
 === COWPYBARAMQ RECOVERY BENCHMARK REPORT ===
 
 Test Scenario: Graceful vs Forced Shutdown Recovery
-  Startup Recovery Time: 2.843 ms
+  Startup Recovery Time: 3.408 ms
   Status: PASSED
-  Details: Graceful shutdown sequence: 10.36ms. Replay recovered all topics.
+  Details: Graceful shutdown sequence: 8.31ms. Replay recovered all topics.
 
 Test Scenario: Repeated Crash Cycles (5 iterations)
-  Startup Recovery Time: 0.435 ms
+  Startup Recovery Time: 0.442 ms
   Status: PASSED
   Details: Successfully recovered all 5 cycle messages after 5 consecutive crash sequences.
 
 Test Scenario: Checksum Integrity and Recovery
-  Startup Recovery Time: 4.221 ms
+  Startup Recovery Time: 5.896 ms
   Status: PASSED
   Details: Gracefully skipped 1 corrupted and 1 truncated entry. Recovered 1 valid entry.
 
 Test Scenario: Replication Cluster Failover and Recovery
-  Startup Recovery Time: 809.681 ms
+  Startup Recovery Time: 833.972 ms
   Status: PASSED
   Details: Successfully handled failover of follower to leader and leader restart as syncing follower.
 
 Test Scenario: Concurrent Producers during Recovery
-  Startup Recovery Time: 1.859 ms
+  Startup Recovery Time: 2.853 ms
   Status: PASSED
   Details: Spanned 10 concurrent producers immediately upon recovery without request drop.
 

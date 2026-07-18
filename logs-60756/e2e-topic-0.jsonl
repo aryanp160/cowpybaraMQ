@@ -1,0 +1,4 @@
+{"offset": 0, "message": {"val": 100}, "checksum": 2289004193}
+{"offset": 1, "message": {"val": 200}, "checksum": 2079490690}
+{"offset": 2, "message": {"val": 300}, "checksum": 3213715360}
+{"offset": 3, "message": {"val": "key_a"}, "checksum": 4233207009}
