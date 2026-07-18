@@ -83,3 +83,9 @@ class Storage:
         """Read all messages from the specified partition of a topic."""
         partition = self.get_partition(topic_name, partition_id)
         return partition.read_all()
+
+    def flush(self):
+        """Flush all partitions managed by this Storage instance to disk."""
+        for topic_name, partition_map in list(self.partitions.items()):
+            for partition_id, partition in list(partition_map.items()):
+                partition.flush()
