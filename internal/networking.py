@@ -284,5 +284,8 @@ class Server:
 
         if self.server:
             self.server.close()
-            await self.server.wait_closed()
+            try:
+                await asyncio.wait_for(self.server.wait_closed(), timeout=1.0)
+            except Exception:
+                pass
             logger.info("Server stopped.")

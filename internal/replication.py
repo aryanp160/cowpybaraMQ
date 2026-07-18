@@ -39,11 +39,23 @@ class ReplicationManager:
         """Leader side: Register a follower and stream historical logs."""
         print(f"DEBUG: Registering follower '{broker_id}' with offsets: {offsets}")
         self.followers[broker_id] = writer
-        self.follower_offsets[broker_id] = {k: v - 1 for k, v in offsets.items()}
+
+        full_offsets = dict(offsets)
+        if hasattr(self.broker.storage, "partitions") and isinstance(
+            self.broker.storage.partitions, dict
+        ):
+            for topic, parts in self.broker.storage.partitions.items():
+                if hasattr(parts, "keys"):
+                    for p_id in parts.keys():
+                        key = f"{topic}-{p_id}"
+                        if key not in full_offsets:
+                            full_offsets[key] = 0
+
+        self.follower_offsets[broker_id] = {k: v - 1 for k, v in full_offsets.items()}
 
         # Send historical messages the follower is missing
         try:
-            for tp_key, offset in offsets.items():
+            for tp_key, offset in full_offsets.items():
                 parts = tp_key.rsplit("-", 1)
                 if len(parts) == 2 and parts[1].isdigit():
                     topic = parts[0]
@@ -128,11 +140,13 @@ class ReplicationManager:
 
     def start_follower_sync(self, leader_host: str, leader_port: int):
         """Follower side: Start background sync task."""
+        self.running = True
         if self.sync_task and not self.sync_task.done():
             self.sync_task.cancel()
         self.sync_task = asyncio.create_task(self._sync_loop(leader_host, leader_port))
 
     async def stop_follower_sync(self):
+        self.running = False
         if self.sync_task:
             self.sync_task.cancel()
             try:
@@ -258,4 +272,4 @@ class ReplicationManager:
                         pass
 
             if self.running:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
