@@ -1,4 +1,5 @@
 import pytest
+
 from internal.compression import compress_payload, decompress_payload
 
 

@@ -1,12 +1,14 @@
 import asyncio
 import json
-import pytest
 import socket
-from internal.storage import Storage
-from internal.offsets import OffsetManager
-from internal.groups import GroupManager
+
+import pytest
+
 from internal.broker import Broker
+from internal.groups import GroupManager
 from internal.networking import Server
+from internal.offsets import OffsetManager
+from internal.storage import Storage
 
 
 def get_free_port():

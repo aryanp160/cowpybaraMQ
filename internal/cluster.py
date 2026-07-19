@@ -18,8 +18,8 @@ class ClusterManager:
     ):
         self.broker = broker
         from internal.config import (
-            CLUSTER_MEMBERS,
             BROKER_ID,
+            CLUSTER_MEMBERS,
             HEARTBEAT_INTERVAL,
             HEARTBEAT_TIMEOUT,
         )

@@ -1,8 +1,9 @@
-import pytest
 import asyncio
 import importlib.util
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def load_cli_module(name, path_str):

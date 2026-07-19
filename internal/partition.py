@@ -107,9 +107,10 @@ class Partition:
 
     def read_all(self) -> List[Dict[str, Any]]:
         """Read all messages from the partition's JSONL file."""
-        from internal.compression import decompress_payload
         import logging
         import zlib
+
+        from internal.compression import decompress_payload
 
         logger = logging.getLogger(__name__)
 

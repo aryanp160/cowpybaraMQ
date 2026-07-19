@@ -1,10 +1,11 @@
 import asyncio
 import logging
-from typing import Dict, Any, List, Tuple
-from internal.storage import Storage
-from internal.protocol import format_response
-from internal.offsets import OffsetManager
+from typing import Any, Dict, List, Tuple
+
 from internal.groups import GroupManager, TopicPartition
+from internal.offsets import OffsetManager
+from internal.protocol import format_response
+from internal.storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,7 @@ class Broker:
 
         # Record metrics
         import json
+
         from internal.compression import compress_payload
 
         compressed_msg, _ = compress_payload(

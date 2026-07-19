@@ -1,7 +1,8 @@
-import pytest
 import importlib.util
 import sys
 from pathlib import Path
+
+import pytest
 
 
 # Dynamically load the CLI tool to avoid shadowing standard library 'cmd'

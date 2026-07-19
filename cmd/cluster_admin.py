@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 DEFAULT_MEMBERS = ["127.0.0.1:9092", "127.0.0.1:9093", "127.0.0.1:9094"]
 

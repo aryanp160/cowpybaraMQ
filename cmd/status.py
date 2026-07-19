@@ -1,6 +1,6 @@
+import argparse
 import asyncio
 import json
-import argparse
 
 
 async def fetch_status(host="127.0.0.1", port=9092):
